@@ -1,28 +1,46 @@
-var profiles = new ProfileManager();
+// profiles will be initialized by the calling page
+var profiles = null;
 var StoreClass = StoreSync;
+// Background function no longer needed in Manifest V3
+// Service workers handle background functionality directly
 function background()
 {
-	return chrome.extension.getBackgroundPage();
+	// For backwards compatibility, return null
+	// Callers should use chrome.runtime.sendMessage instead
+	return null;
 }
 
 function activeProfile()
 {
-	return profiles.getActiveProfile().values;
+	if (!profiles) {
+		console.error('ProfileManager not initialized');
+		return null;
+	}
+	var profile = profiles.getActiveProfile();
+	return profile ? profile.values : null;
 }
 
+// Ensure functions are available globally
+window.activeProfile = activeProfile;
+
 function setPref(key, value) {
-	localStorage[key] = value;
+	// Store temporarily in chrome.storage.local
+	chrome.storage.local.set({ [key]: value });
 	
 	if (key == 'refresh_rate') {
-		background.refreshRateChanged();
+		chrome.runtime.sendMessage({ action: 'refreshRateChanged' });
 	}
 }
 
-function getPref(key) {
-	var v = localStorage[key];
-	if (v == 'true') v = true;
-	if (v == 'false') v = false;
-	return v;
+// Note: getPref is now async due to chrome.storage
+// Use chrome.storage.local.get directly for new code
+function getPref(key, callback) {
+	chrome.storage.local.get([key], function(result) {
+		var v = result[key];
+		if (v == 'true') v = true;
+		if (v == 'false') v = false;
+		if (callback) callback(v);
+	});
 }
 
 function checkEndSlash(input) {
@@ -36,12 +54,19 @@ function checkEndSlash(input) {
 
 function constructApiUrl( profileValues ) {
 	var profile = profileValues || activeProfile();
+	if (!profile || !profile.url) {
+		return null;
+	}
 	return checkEndSlash( profile.url ) + 'api';
 }
 
 function constructApiPost( profileValues ) {
 	var profile = profileValues || activeProfile();
 	var data = {};
+	
+	if (!profile) {
+		return data;
+	}
 	
 	var apikey = profile.api_key;
 	if( apikey ) {

@@ -1,0 +1,56 @@
+/* Setting styles for fancy-settings - Overridden by SABconnect++ modern design */
+
+/* These styles are overridden by css/settings.css for consistent modern design */
+/* Keeping minimal fallback styles for compatibility */
+
+.setting {
+    margin: 0;
+    padding: 25px 30px;
+    border: none;
+    border-bottom: 1px solid #e1e8ed;
+    background: white;
+    transition: all 0.2s ease;
+}
+
+.setting label {
+    display: block;
+    font-weight: 600;
+    margin-bottom: 12px;
+    color: #2c3e50;
+    font-size: 15px;
+}
+
+.setting input,
+.setting select,
+.setting textarea {
+    width: 100%;
+    padding: 12px 16px;
+    border: 1px solid #e1e8ed;
+    border-radius: 8px;
+    font-size: 14px;
+    background: white;
+    color: #2c3e50;
+    transition: all 0.2s ease;
+    box-sizing: border-box;
+    font-family: inherit;
+}
+
+.setting input[type="checkbox"] {
+    width: auto;
+    margin-right: 12px;
+    transform: scale(1.2);
+}
+
+.setting button {
+    background: linear-gradient(135deg, #3498db, #0984e3);
+    color: white;
+    border: none;
+    padding: 12px 24px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+    transition: all 0.2s ease;
+    width: auto;
+    box-shadow: 0 2px 8px rgba(52, 152, 219, 0.2);
+}

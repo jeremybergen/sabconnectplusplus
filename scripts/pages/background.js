@@ -62,15 +62,19 @@ function resetSettings()
 function fileSizes(value, decimals)
 {
 	if(decimals == null) decimals = 2;
-	kb = value / 1024
-	mb = value / 1048576
-	gb = value / 1073741824
-	if (gb >= 1){
-		return gb.toFixed(decimals)+"GB"
+	var kb = value / 1024;
+	var mb = value / 1048576;
+	var gb = value / 1073741824;
+	var tb = value / 1099511627776; // 1024^4
+	
+	if (tb >= 1) {
+		return tb.toFixed(decimals) + "TB";
+	} else if (gb >= 1) {
+		return gb.toFixed(decimals) + "GB";
 	} else if (mb >= 1) {
-		return mb.toFixed(decimals)+"MB"
+		return mb.toFixed(decimals) + "MB";
 	} else {
-		return kb.toFixed(decimals)+"KB"
+		return kb.toFixed(decimals) + "KB";
 	}
 }
 
@@ -141,14 +145,11 @@ function displayNotificationCallback( data )
         var key = 'past_dl-' + entry.name + '-' + entry.bytes;
 		if (typeof localStorage[key] == 'undefined')
         {
-			console.log("Possible History notification:");
-			console.log(entry.name);
             
 			// Only notify when post-processing is complete
 			if (entry.action_line == '')
             {
             	chrome.notifications.onButtonClicked.addListener(function(notId, buttonIndex) {
-            		chrome.tabs.create({url: 'file:///'+entry.storage}, function(tab) { console.log("opening tab"); });
             	});
 				if (entry.fail_message != '')
                 {
@@ -162,7 +163,6 @@ function displayNotificationCallback( data )
                             message: entry.name + ': ' + fail_msg,
                             buttons: [{ title: entry.storage  }]
                         },
-                        function(notId) { console.log("notification for "+notId); }
 					);
 				} else {
 					var notification = chrome.notifications.create(
@@ -174,7 +174,6 @@ function displayNotificationCallback( data )
                             message: entry.name,
                             buttons: [{ title: entry.storage  }]
                         },
-                        function(notId) { console.log("notification for "+notId); }
 					);
 				}
 				
@@ -387,7 +386,6 @@ function startTimer()
 {
 	var refreshRate = getRefreshRate();
 	if( refreshRate > 0 ) {
-	    console.log("Will refresh from SABnzbd every " + refreshRate + " ms.");
     	gTimer = setInterval( refresh, refreshRate );
 	}
 	else {
@@ -405,7 +403,6 @@ function DoesSiteSupportCatHeader( nzburl )
 		}
 	}
 	
-	console.log( 'site_supports_category_header = ' + supported );
 	return supported;
 }
 
@@ -419,7 +416,6 @@ function SetupCategoryHeader( request, data, nzburl )
 {
 	// Only use auto-categorization if "Use X-DNZB-Category" is false (0), or if the index site doesn't support the X-DNZB-Category HTTP header
 	var useCatHeader = store.get('config_use_category_header');
-	console.log( 'config_use_category_header = ' + useCatHeader );
 
     var useUserCats = store.get('config_use_user_categories');
 	

@@ -1,6 +1,5 @@
 function getHeaderFromURL(url)
 {
-    console.log("extracting header fom "+url);
     var regex = new RegExp("[?&]q=([^&#]*)"),
         results = regex.exec(url);
     return results == null ? "" : decodeURIComponent(results[1].replace(/\+/g, " "));
@@ -47,7 +46,6 @@ function handleAllDownloadLinks()
         
             var binsearch = "http://binsearch.info/?q="+header+"&max=10&adv_age=&server #r2";
             var nzbindex = "http://nzbindex.nl/search/?q="+header+"&sort=sizedesc";
-            console.log("url: "+nzbindex);
         
             $.get(nzbindex, function(data)
             {
@@ -92,6 +90,5 @@ function handleAllDownloadLinks()
 }
 
 Initialize( 'usenet4ever', null, function() {
-	console.log("initializing usenet4ever");
 	handleAllDownloadLinks();
 });

@@ -74,8 +74,6 @@ function addToSABnzbd(addLink, nzburl, mode, nice_name, category) {
 		request.category = category;
 	}
 	
-	console.log("Sending to SABnzbd:");
-	console.log(request);
 	
 	chrome.runtime.sendMessage(
 		request,

@@ -4,17 +4,16 @@
 <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
 <link rel="stylesheet" type="text/css" href="css/popup.css" />
 <script type="text/javascript" src="third_party/jquery/jquery-1.12.4.min.js"></script>
-<script type="text/javascript" src="third_party/jquery/jquery-ui-1.8.20.sortable.min.js"></script>
+<script type="text/javascript" src="third_party/jquery/jquery-ui-1.12.1.min.js"></script>
 <script type="text/javascript" src="third_party/jquery/jquery.urldecoder.min.js"></script>
-<script type="text/javascript" src="third_party/fancy-settings/lib/store.js"></script>
+<script type="text/javascript" src="third_party/fancy-settings-mod/lib/store.js"></script>
+<script type="text/javascript" src="scripts/utility.js"></script>
 <script type="text/javascript" src="scripts/profile.js"></script>
 <script type="text/javascript" src="scripts/pages/common.js"></script>
 
 
-<script type="text/javascript" src="third_party/jqplot/jquery.jqplot.js"></script>
-<script type="text/javascript" src="third_party/jqplot/jqplot.barRenderer.js"></script>
-<script type="text/javascript" src="third_party/jqplot/jqplot.pointLabels.js"></script>
-<link rel="stylesheet" type="text/css" href="third_party/jqplot/jquery.jqplot.css" />
+<!-- Modern chart implementation using Chart.js -->
+<script type="text/javascript" src="third_party/chart.js"></script>
 
 <script type="text/html" id="errors">
 <![CDATA[
@@ -27,12 +26,63 @@
 </head>
 <body>
 
+<div id="addon-icon-container">
+	<img id="addon-icon" src="images/addon_icon.svg" alt="SABconnect++" />
+	<div class="header-buttons">
+		<div id="queue_toggle_container" class="dropdown-button">
+			<button id="queue_toggle_btn" title="Resume Queue (Space)">
+				<img src="images/play.svg" alt="Resume Queue" />
+			</button>
+			<button id="queue_toggle_dropdown" class="dropdown-arrow" title="Pause Options">
+				<span>▼</span>
+			</button>
+			<div id="pause_duration_menu" class="dropdown-menu" style="display: none;">
+				<div class="dropdown-item" data-duration="15">Pause 15 min</div>
+				<div class="dropdown-item" data-duration="30">Pause 30 min</div>
+				<div class="dropdown-item" data-duration="60">Pause 1 hour</div>
+				<div class="dropdown-item" data-duration="120">Pause 2 hours</div>
+				<div class="dropdown-item" data-duration="360">Pause 6 hours</div>
+				<div class="dropdown-item" data-duration="0">Pause indefinitely</div>
+			</div>
+		</div>
+		<button id="refresh_btn" title="Refresh (R)">
+			<img src="images/refresh.svg" alt="Refresh" />
+		</button>
+		<button id="open_sabnzbd_btn" title="Open SABnzbd (O)">
+			<img src="images/external-link.svg" alt="Open SABnzbd" />
+		</button>
+		<button id="extension_settings_btn" title="Extension Settings">
+			<img src="images/settings.svg" alt="Extension Settings" />
+		</button>
+	</div>
+	<div class="power-controls">
+		<button id="shutdown_btn" title="Shutdown SABnzbd">
+			<img src="images/power-off.svg" alt="Shutdown" />
+		</button>
+		<button id="restart_btn" title="Restart SABnzbd">
+			<img src="images/restart.svg" alt="Restart" />
+		</button>
+	</div>
+</div>
+<div id="profile-selector">
+	<div class="profile-section">
+		<span class="profile-label">PROFILE </span>
+		<select id="profiles"></select>
+	</div>
+</div>
+<div id="speed-limit-bar">
+	<span class="speed-label">SPEED LIMIT</span>
+	<div class="speed-controls">
+		<input id="speed-slider" type="range" min="0" max="100" value="100" />
+		<input id="speed-input" type="text" placeholder="100" />
+		<span class="speed-percent">%</span>
+		<button id="set-speed">Set</button>
+	</div>
+</div>
+
+<div id="scrollable-content">
 <div id="sabInfo">
 	<div id="sab-errors"></div>
-
-	<div>
-		Active Profile: <select id="profiles"></select>
-	</div>
 
 	<div class="col-left">
 		<span id="sab-status"></span><br />
@@ -45,27 +95,118 @@
 	</div>
 	<div class="float-fix"></div>
 
-	<div id="graph"></div>
+
+	<div id="graph-container">
+		<canvas id="speed-chart"></canvas>
+	</div>
 
 	<ul id="sab-queue"></ul>
+	
+	<div id="batch-controls" style="display: none;">
+		<div class="batch-controls-header">
+			<span class="batch-selected-count">0 items selected</span>
+			<button id="batch-select-all" class="batch-btn-small">All</button>
+			<button id="batch-select-none" class="batch-btn-small">None</button>
+		</div>
+		<div class="batch-controls-actions">
+			<button id="batch-pause" class="batch-btn">Pause Selected</button>
+			<button id="batch-resume" class="batch-btn">Resume Selected</button>
+			<button id="batch-delete" class="batch-btn batch-btn-danger">Delete Selected</button>
+			<select id="batch-priority" class="batch-priority-select">
+				<option value="">Set Priority...</option>
+				<option value="-1">Low</option>
+				<option value="0">Normal</option>
+				<option value="1">High</option>
+				<option value="2">Force</option>
+			</select>
+		</div>
+	</div>
 </div>
 
 <div class="menu">
-	<hr />
-	<div id="open_sabnzbd">Open SABnzbd</div>
-	<hr />
-	<div id="extension_settings">Extension Settings</div>
-	<hr />
-	<div id="refresh">Refresh</div>
-	<hr />
-	<div>
-		Max Speed: <input id="speed-input" type="text"/> % <button id="set-speed">Set</button>
-	</div>
+    <div id="history-card">
+        <div class="history-header-row">
+            <span class="info-label">RECENT DOWNLOADS</span>
+            <div class="history-controls">
+                <button id="history-toggle" class="batch-btn-small">
+                    <img src="images/chevron-down.svg" alt="Show" />
+                </button>
+                <select id="history-limit" class="stats-period-select history-hidden">
+                    <option value="5">Last 5</option>
+                    <option value="10" selected>Last 10</option>
+                    <option value="20">Last 20</option>
+                </select>
+            </div>
+        </div>
+        <div id="history-content" class="history-content" style="display: none;">
+            <div class="history-loading">Loading history...</div>
+        </div>
+    </div>
+    <hr />
+    <div id="schedule-card">
+        <div class="schedule-title">
+            <span class="info-label">AUTO-PAUSE SCHEDULE</span>
+            <button id="schedule-toggle" class="batch-btn-small">Enable</button>
+        </div>
+        <div class="schedule-toggle-row">
+        </div>
+        <div id="schedule-content" class="schedule-content" style="display: none;">
+            <div class="schedule-time-controls">
+                <div class="schedule-time-row">
+                    <label class="schedule-label">Pause:</label>
+                    <input type="time" id="pause-time" class="schedule-input" value="02:00" />
+                </div>
+                <div class="schedule-time-row">
+                    <label class="schedule-label">Resume:</label>
+                    <input type="time" id="resume-time" class="schedule-input" value="08:00" />
+                </div>
+            </div>
+            <div class="schedule-days-section">
+                <div class="schedule-days">
+                    <label class="day-checkbox"><input type="checkbox" value="1" checked /> M</label>
+                    <label class="day-checkbox"><input type="checkbox" value="2" checked /> T</label>
+                    <label class="day-checkbox"><input type="checkbox" value="3" checked /> W</label>
+                    <label class="day-checkbox"><input type="checkbox" value="4" checked /> T</label>
+                    <label class="day-checkbox"><input type="checkbox" value="5" checked /> F</label>
+                    <label class="day-checkbox"><input type="checkbox" value="6" /> S</label>
+                    <label class="day-checkbox"><input type="checkbox" value="0" /> S</label>
+                </div>
+            </div>
+            <div class="schedule-status">
+                <span id="schedule-status-text">Schedule disabled</span>
+            </div>
+        </div>
+    </div>
     <hr />
     <div id="user_category" style="display:none;">
         Override Category: <select id="userCategory"></select>
     </div>
+    <hr />
+    <div id="system-info-card">
+        <div class="info-row">
+            <span class="info-label">DISK SPACE</span>
+            <span class="info-value"><span id="disk-available">-G</span> of <span id="disk-total">-G</span> total</span>
+        </div>
+        <div class="info-row">
+            <span class="info-label">SPEED LIMIT</span>
+            <span class="info-value" id="speed-limit-abs">-MB/s</span>
+        </div>
+        <div class="info-row">
+            <span class="info-label">TODAY</span>
+            <span class="info-value" id="stats-today">-</span>
+        </div>
+        <div class="info-row">
+            <span class="info-label">MONTH</span>
+            <span class="info-value" id="stats-month">-</span>
+        </div>
+        <div class="info-row">
+            <span class="info-label">TOTAL</span>
+            <span class="info-value" id="stats-total">-</span>
+        </div>
+    </div>
 </div>
+</div>
+<div class="keyboard-help-trigger" title="Keyboard shortcuts (?)">?</div>
 <script type="text/javascript" src="scripts/pages/popup.js"></script>
 </body>
 </html>

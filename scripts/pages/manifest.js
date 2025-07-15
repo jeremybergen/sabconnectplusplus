@@ -1,4 +1,4 @@
-this.manifest = {
+window.manifest = {
 	'name': 'SABConnect++ Settings',
 	'icon': 'images/addon_icon.svg',
 	'alignment': [
