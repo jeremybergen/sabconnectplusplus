@@ -1,14 +1,87 @@
-var store = new StoreClass('settings', undefined, undefined, storeReady_settings);
+if (window.sabconnectStore) {
+	var store = window.sabconnectStore;
+	if (store.isReady) {
+		storeReady_settings();
+	} else {
+		store.readyCallbacks.push(storeReady_settings);
+	}
+} else {
+	var store = new StoreClass('settings', undefined, undefined, storeReady_settings);
+	window.sabconnectStore = store;
+}
+
+var profiles = null;
+
+function getPref(name) {
+    return store.get(name);
+}
+
+function setPref(name, value) {
+    return store.set(name, value);
+}
+
+window.getPref = getPref;
+window.setPref = setPref;
 
 function storeReady_settings() {
-	new FancySettings.initWithManifest( InitializeSettings );
+	
+	if (!store.isReady) {
+		setTimeout(storeReady_settings, 50);
+		return;
+	}
+	
+	if (!store.data.profiles) {
+		setTimeout(storeReady_settings, 50);
+		return;
+	}
+	
+	chrome.storage.local.get(['profiles'], function(result) {
+		
+		setTimeout(function() {
+			profiles = new ProfileManager();
+		
+		var existingProfiles = store.get('profiles');
+		
+		var directProfileData = store.data.profiles;
+		
+		if (directProfileData && typeof directProfileData === 'object' && 
+			Object.keys(directProfileData).length > Object.keys(existingProfiles || {}).length) {
+			existingProfiles = directProfileData;
+			store.data.profiles = directProfileData;
+		}
+		
+		
+		var shouldCreateDefault = !existingProfiles || typeof existingProfiles !== 'object' || Object.keys(existingProfiles).length === 0;
+		
+		if (shouldCreateDefault) {
+			var defaultProfiles = {
+				'Default': {
+					url: '',
+					api_key: '',
+					username: '',
+					password: ''
+				}
+			};
+			store.set('profiles', defaultProfiles);
+			store.set('active_profile', 'Default');
+		} else {
+		}
+		
+		if (!store.get('active_profile')) {
+			var firstProfile = Object.keys(store.get('profiles') || {})[0];
+			if (firstProfile) {
+				store.set('active_profile', firstProfile);
+			}
+		}
+		
+			FancySettings.initWithManifest( InitializeSettings );
+		}, 100);
+	});
 }
 
 var popup = null;
 var settings = null;
 
-// This variable serves as a way for the popup (and other pages in the future)
-// to determine if this Document object is the settings page.
 this.is_sabconnect_settings = true;
 
 var profileMissingErrorMsg =
@@ -64,7 +137,6 @@ var ProfilePopup = new Class({
 
 function checkForErrors()
 {
-	// Called after a request to SABnzbd's api has been tried, 'error' should be set if there was an error
 	var error = getPref('error');
 	if(error) {
 		$('connection-status')
@@ -78,8 +150,6 @@ function checkForErrors()
 			;
 	}
 	
-	// Unsetting error here as otherwise would appear in popup - could confuse the user
-	// Could move this just so it is removed when connected successfully
 	setPref('error', '');
 }
 
@@ -90,7 +160,20 @@ function OnTestConnectionClicked()
 		.set( 'html', 'Running...' )
 		;
 
-	background().testConnection( getConnectionValues(), checkForErrors );
+	chrome.runtime.sendMessage({ 
+		action: 'testConnection', 
+		profileValues: getConnectionValues() 
+	}, function(response) {
+		if (response && response.success) {
+			$('connection-status')
+				.set( 'class', 'connection-status-success' )
+				.set( 'html', 'Succeeded' );
+		} else {
+			$('connection-status')
+				.set( 'class', 'connection-status-failure' )
+				.set( 'html', 'Failed: ' + (response && response.error ? response.error : 'Unknown error') );
+		}
+	});
 }
 	
 function RefreshControlStates( settings )
@@ -105,13 +188,14 @@ function RefreshControlStates( settings )
 
 function OnResetConfigClicked( settings )
 {
-	background().resetSettings();
+	chrome.runtime.sendMessage({ action: 'resetSettings' });
 	RefreshControlStates( settings );
 }
 
 function OnRefreshRateChanged()
 {
-	background().restartTimer();
+	chrome.runtime.sendMessage({ action: 'restartTimer' });
+	chrome.runtime.sendMessage({ action: 'settings_changed' });
 }
 
 function CreateTestConnectionStatusElement( settings )
@@ -125,14 +209,15 @@ function CreateTestConnectionStatusElement( settings )
 
 function OnToggleContextMenu()
 {
-	background().SetupContextMenu()
+	chrome.runtime.sendMessage({ action: 'setupContextMenu' });
+	chrome.runtime.sendMessage({ action: 'settings_changed' });
 }
 
 function NotifyTabRefresh()
 {
 	chrome.windows.getAll( {populate: true}, function( windows ) {
-		Array.each( windows, function( window ) {
-			Array.each( window.tabs, function( tab ) {
+		windows.forEach( function( window ) {
+			window.tabs.forEach( function( tab ) {
 				chrome.tabs.sendMessage( tab.id, { action: 'refresh_settings' } );
 			});
 		});
@@ -144,6 +229,9 @@ function RegisterContentScriptNotifyHandlers( settings )
 	Object.each( settings.manifest, function( setting ) {
 		if( setting.params.type !== 'button' ) {
 			setting.addEvent( 'action', NotifyTabRefresh );
+			setting.addEvent( 'action', function() {
+				chrome.runtime.sendMessage({ action: 'settings_changed' });
+			});
 		}
 	});
 }
@@ -153,11 +241,24 @@ function SetupConnectionProfiles( settings )
 	popup = new ProfilePopup( settings );
 	
 	var profileNames = store.get( 'profiles' );
+	
 	for( var p in profileNames ) {
 		popup.add( p );
 	}
 
-	changeActiveProfile( profiles.getActiveProfile().name );
+	var activeProfile = profiles.getActiveProfile();
+	
+	if (activeProfile && activeProfile.name) {
+		changeActiveProfile( activeProfile.name );
+	} else {
+		var allProfiles = store.get('profiles');
+		if (allProfiles && typeof allProfiles === 'object') {
+			var firstProfileName = Object.keys(allProfiles)[0];
+			if (firstProfileName) {
+				changeActiveProfile(firstProfileName);
+			}
+		}
+	}
 }
 
 function getConnectionValues()
@@ -172,11 +273,29 @@ function getConnectionValues()
 
 function setConnectionValues( profileName, url, api_key, username, password )
 {
-	settings.manifest.profile_name.set( profileName );
-	settings.manifest.sabnzbd_url.set( url, true );
-	settings.manifest.sabnzbd_api_key.set( api_key, true );
-	settings.manifest.sabnzbd_username.set( username, true );
-	settings.manifest.sabnzbd_password.set( password, true );
+	try {
+		settings.manifest.profile_name.set( profileName, true );
+		settings.manifest.sabnzbd_url.set( url || '', true );
+		settings.manifest.sabnzbd_api_key.set( api_key || '', true );
+		settings.manifest.sabnzbd_username.set( username || '', true );
+		settings.manifest.sabnzbd_password.set( password || '', true );
+		
+		if (settings.manifest.sabnzbd_url.refresh) {
+			settings.manifest.sabnzbd_url.refresh();
+		}
+		if (settings.manifest.sabnzbd_api_key.refresh) {
+			settings.manifest.sabnzbd_api_key.refresh();
+		}
+		if (settings.manifest.sabnzbd_username.refresh) {
+			settings.manifest.sabnzbd_username.refresh();
+		}
+		if (settings.manifest.sabnzbd_password.refresh) {
+			settings.manifest.sabnzbd_password.refresh();
+		}
+		
+	} catch (error) {
+		console.error('Error setting connection values:', error);
+	}
 }
 
 function generateUniqueName( name )
@@ -250,25 +369,56 @@ function OnDeleteProfileClicked()
 
 function changeActiveProfile( profileName )
 {
+	var allProfiles = store.get('profiles');
+	
+	if (!allProfiles || !allProfiles[profileName]) {
+		console.error('Profile not found in storage:', profileName);
+		return;
+	}
+	
 	profiles.setActiveProfile( profileName );
 	popup.setSelection( profileName );
 	
-	var profile = profiles.getActiveProfile().values;
-	if( profile) {
-		setConnectionValues( profileName, profile.url, profile.api_key, profile.username, profile.password );
+	var profileData = allProfiles[profileName];
+	
+	var password = store.get("profile_pass" + profileName) || "";
+	
+	if( profileData ) {
+		setConnectionValues( 
+			profileName, 
+			profileData.url || '', 
+			profileData.api_key || '', 
+			profileData.username || '', 
+			password 
+		);
+		
+		store.set('sabnzbd_url', profileData.url || '');
+		store.set('sabnzbd_api_key', profileData.api_key || '');
+		store.set('sabnzbd_username', profileData.username || '');
+		store.set('sabnzbd_password', password);
+	} else {
+		console.error('No profile data found for:', profileName);
 	}
 }
 
-function OnProfileChanged( profileName )
+function OnProfileChanged( value )
 {
+	var profileName = popup.getSelection();
+	
 	changeActiveProfile( profileName );
 }
 
 function OnConnectionFieldEdited( fieldName, value )
 {
 	var profile = profiles.getActiveProfile();
-	profile.values[fieldName] = value;
-	profiles.setProfile( profile );
+	if (profile && profile.values) {
+		profile.values[fieldName] = value;
+		profiles.setProfile( profile );
+		
+		var storeFieldName = 'sabnzbd_' + fieldName;
+		if (fieldName === 'api_key') storeFieldName = 'sabnzbd_api_key';
+		store.set(storeFieldName, value);
+	}
 }
 
 function OnProfileNameChanged( value )

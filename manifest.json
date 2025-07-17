@@ -1,25 +1,14 @@
 {
-	"manifest_version": 2,
+	"manifest_version": 3,
 	"name": "SABconnect++",
-	"version": "0.6.38",
+	"version": "1.9.36",
 	"description": "SABnzbd extension for Google Chrome.",
 	"minimum_chrome_version": "88.0",
 	"background": {
-			"scripts": [
-				"third_party/jquery/jquery-1.12.4.min.js",
-				"third_party/jquery/jquery.urldecoder.min.js",
-				"third_party/fancy-settings/lib/store.js",
-				"scripts/convert.js",
-				"scripts/utility.js",
-				"scripts/profile.js",
-				"scripts/pages/common.js",
-				"scripts/pages/background.js",
-				"scripts/pages/context_menu.js",
-				"scripts/pages/newznab-check.js"
-			]
+		"service_worker": "scripts/background-sw.js"
 	},
 	"options_page": "settings.html",
-	"browser_action": {
+	"action": {
 		"default_icon": "images/content_icon.png",
 		"default_title": "SABconnect++",
 		"default_popup": "popup.html"
@@ -29,20 +18,25 @@
 		"48": "images/sab_48.png",
 		"128": "images/sab_128.png"
 	},
-	"web_accessible_resources": [
-		"images/content_icon.png",
-		"images/content_icon_error.png",
-		"images/content_icon_fetching.png",
-		"images/content_icon_success.png",
-		"css/common.css"
-	],
-	"permissions":
-	[
-		"*://*/*",
+	"web_accessible_resources": [{
+		"resources": [
+			"images/content_icon.png",
+			"images/content_icon_error.png",
+			"images/content_icon_fetching.png",
+			"images/content_icon_success.png",
+			"css/common.css"
+		],
+		"matches": ["<all_urls>"]
+	}],
+	"permissions": [
 		"tabs",
 		"notifications",
 		"contextMenus",
-		"storage"
+		"storage",
+		"alarms"
+	],
+	"host_permissions": [
+		"*://*/*"
 	],
 	"content_scripts": [
 		{

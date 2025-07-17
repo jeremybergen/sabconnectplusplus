@@ -47,13 +47,11 @@ function CreateContextMenu()
 	}
 	
 	chrome.contextMenus.create( properties, CreateContextMenuResult );
-	console.log( 'Context menu created' );
 }
 
 function DestroyContextMenu()
 {
 	chrome.contextMenus.removeAll();
-	console.log( 'Context menu destroyed' );
 }
 
 function SetupContextMenu()

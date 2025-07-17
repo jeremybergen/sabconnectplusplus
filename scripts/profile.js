@@ -110,13 +110,22 @@ ProfileManager.prototype.contains = function( profileName )
 }
 
 ProfileManager.prototype.saveProfiles = function(profiles) {
-	//discard passwords
+	
+	// Create a deep copy to avoid modifying the original object
+	var profilesToSave = {};
 	for(var profileName in profiles) {
 		var profile = profiles[profileName];
+		profilesToSave[profileName] = {
+			url: profile.url || '',
+			api_key: profile.api_key || '',
+			username: profile.username || ''
+		};
+		
+		// Handle password separately - don't include it in the profiles object
 		if(profile.hasOwnProperty("password")) {
 			setPref("profile_pass" + profileName, profile.password);
-			delete profile.password;
 		}
 	}
-	store.set( 'profiles', profiles );
+	
+	store.set( 'profiles', profilesToSave );
 }

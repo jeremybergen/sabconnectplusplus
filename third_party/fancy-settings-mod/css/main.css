@@ -1,0 +1,39 @@
+/* Main layout styles for fancy-settings - Overridden by SABconnect++ modern design */
+
+/* These styles are overridden by css/settings.css for consistent modern design */
+/* Keeping minimal fallback styles for compatibility */
+
+#sidebar {
+    position: fixed;
+    left: 0;
+    top: 0;
+    width: 280px;
+    height: 100vh;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    overflow-y: auto;
+    z-index: 1000;
+}
+
+#content {
+    margin-left: 280px;
+    padding: 40px;
+    min-height: 100vh;
+    background: #f8f9fa;
+}
+
+.tab-content {
+    display: none;
+}
+
+.tab-content.active {
+    display: block;
+}
+
+.settings-group {
+    background: white;
+    margin-bottom: 30px;
+    border-radius: 12px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+    overflow: hidden;
+}
