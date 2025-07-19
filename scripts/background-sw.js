@@ -52,7 +52,7 @@ class SimpleProfileManager {
 
     getActiveProfile() {
         const profiles = this.store.get('profiles') || {};
-        const activeProfileName = this.store.get('activeProfile') || 'Default';
+        const activeProfileName = this.store.get('active_profile') || this.store.get('activeProfile') || 'Default';
         return {
             name: activeProfileName,
             values: profiles[activeProfileName] || {
@@ -65,7 +65,8 @@ class SimpleProfileManager {
     }
 
     setActiveProfile(name) {
-        this.store.set('activeProfile', name);
+        this.store.set('active_profile', name);
+        this.store.set('activeProfile', name); // Keep both for compatibility
     }
 
     getFirstProfile() {
@@ -216,7 +217,10 @@ function constructApiPost(profileValues) {
 }
 
 function getRefreshRate() {
-    return parseInt(store.get('config_refresh_rate')) * 1000;
+    var rawValue = store.get('config_refresh_rate');
+    var parsedValue = parseInt(rawValue);
+    var finalValue = parsedValue * 1000;
+    return finalValue;
 }
 
 // Main functionality
@@ -293,7 +297,13 @@ function fetchInfoSuccess(data, quickUpdate, callback) {
         return;
     }
     
-    chrome.storage.local.set({ 
+    var currentProfile = store.get('active_profile') || store.get('activeProfile') || 'Default';
+    if (currentProfileForRefresh && currentProfileForRefresh !== currentProfile) {
+        if (callback) callback();
+        return;
+    }
+    
+    var currentData = {
         error: '',
         timeleft: data ? data.queue.timeleft : '0',
         speed: data ? data.queue.speed + 'B/s' : '-',
@@ -302,9 +312,22 @@ function fetchInfoSuccess(data, quickUpdate, callback) {
         queue_info: data ? JSON.stringify(data.queue) : '',  // Store full queue info for disk space
         status: data ? data.queue.status : '',
         paused: data ? data.queue.paused === true : false
+    };
+    
+    chrome.storage.local.set(currentData);
+    
+    // Cache this successful data for instant popup loading (with profile info)
+    var activeProfileName = store.get('active_profile') || store.get('activeProfile') || 'Default';
+    chrome.storage.local.set({ 
+        last_successful_data: currentData,
+        last_successful_timestamp: Date.now(),
+        last_successful_profile: activeProfileName
     });
     
+    var additionalData = {};
+    
     if (data && data.queue.paused) {
+        additionalData.pause_int = data.queue.pause_int;
         chrome.storage.local.set({ pause_int: data.queue.pause_int });
     }
     
@@ -318,7 +341,15 @@ function fetchInfoSuccess(data, quickUpdate, callback) {
         var bytesLeft = data.queue.mbleft * bytesInMegabyte;
         queueSize = fileSizes(bytesLeft);
     }
+    additionalData.sizeleft = queueSize;
     chrome.storage.local.set({ sizeleft: queueSize });
+    
+    if (Object.keys(additionalData).length > 0) {
+        chrome.storage.local.get(['last_successful_data'], function(result) {
+            var updatedCache = { ...currentData, ...additionalData };
+            chrome.storage.local.set({ last_successful_data: updatedCache });
+        });
+    }
     
     updateBadge(data);
     updateBackground(data);
@@ -328,7 +359,14 @@ function fetchInfoSuccess(data, quickUpdate, callback) {
 
 function fetchInfoError(error, callback) {
     chrome.storage.local.set({ 
-        error: 'Could not connect to SABnzbd - Check it is running, the details in this plugin\'s settings are correct and that you are running at least SABnzbd version 0.5!'
+        error: 'Could not connect to SABnzbd - Check it is running, the details in this plugin\'s settings are correct and that you are running at least SABnzbd version 0.5!',
+        diskspacetotal1: null,
+        diskspace1: null,
+        sizeleft: '',
+        pause_int: null,
+        last_successful_data: null,
+        last_successful_timestamp: null,
+        last_successful_profile: null
     });
     
     if (callback) callback();
@@ -367,11 +405,17 @@ function sendSabRequest(params, success_callback, error_callback, profileValues)
     }
     
     
+    // Create AbortController for timeout
+    var controller = new AbortController();
+    var timeoutId = setTimeout(() => controller.abort(), 5000);
+    
     fetch(url, {
         method: 'GET',
-        headers: headers
+        headers: headers,
+        signal: controller.signal
     })
     .then(response => {
+        clearTimeout(timeoutId);
         if (!response.ok) {
             throw new Error('HTTP ' + response.status + ': ' + response.statusText);
         }
@@ -381,8 +425,14 @@ function sendSabRequest(params, success_callback, error_callback, profileValues)
         if (success_callback) success_callback(data);
     })
     .catch(error => {
-        console.error('sendSabRequest: Error:', error);
-        if (error_callback) error_callback(error);
+        clearTimeout(timeoutId);
+        if (error.name === 'AbortError') {
+            console.error('sendSabRequest: Request timed out after 5 seconds');
+            if (error_callback) error_callback(new Error('Request timed out'));
+        } else {
+            console.error('sendSabRequest: Error:', error);
+            if (error_callback) error_callback(error);
+        }
     });
 }
 
@@ -450,6 +500,8 @@ function getMaxSpeed(success_callback, error_callback) {
 }
 
 function refresh(quick, callback) {
+    var refreshStartProfile = store.get('active_profile') || store.get('activeProfile') || 'Default';
+    
     if (!callback) {
         callback = function() {
             chrome.runtime.sendMessage({ action: 'refresh_popup' });
@@ -457,10 +509,12 @@ function refresh(quick, callback) {
     }
     
     fetchInfo(quick, function() {
-        // Check custom notification rules after refreshing data
+        var refreshEndProfile = store.get('active_profile') || store.get('activeProfile') || 'Default';
+        if (refreshStartProfile !== refreshEndProfile) {
+            return;
+        }
         if (!quick) {
             checkNotificationRules();
-            // Check auto-pause schedule
             updateScheduleStatus();
         }
         if (callback) callback();
@@ -472,7 +526,6 @@ function refresh(quick, callback) {
             limit: '10'
         };
         sendSabRequest(params, function(data) {
-            // Handle completion/failure notifications
             checkCompletionNotifications(data);
         });
     }
@@ -486,7 +539,6 @@ function checkNotificationRules() {
             var queueData = JSON.parse(result.queue_info);
             var rules = store.get('notification_rules') || {};
             
-            // Check low disk space
             if (rules.low_disk_space_enabled && queueData.diskspace1) {
                 var availableGB = parseFloat(queueData.diskspace1);
                 var thresholdGB = rules.low_disk_space_threshold / 1024;
@@ -500,7 +552,6 @@ function checkNotificationRules() {
                 }
             }
             
-            // Check speed threshold
             if (rules.speed_threshold_enabled && queueData.kbpersec) {
                 var currentSpeed = parseFloat(queueData.kbpersec);
                 
@@ -524,19 +575,15 @@ function checkCompletionNotifications(historyData) {
     
     var rules = store.get('notification_rules') || {};
     
-    // Check for recent completions/failures and update statistics
     historyData.history.slots.forEach(function(item) {
         var completedTime = new Date(item.completed * 1000);
         var now = new Date();
         var timeDiff = now - completedTime;
         
-        // Track statistics for all completed items
         updateDownloadStatistics(item);
         
-        // Only notify about items completed in the last 5 minutes
         if (timeDiff < 5 * 60 * 1000) {
             if (item.status === 'Completed' && rules.completion_enabled) {
-                // Check category filter
                 if (rules.completion_categories.length === 0 || 
                     rules.completion_categories.includes(item.category)) {
                     showNotification(
@@ -568,8 +615,6 @@ function updateDownloadStatistics(item) {
     var sizeBytes = parseFloat(item.bytes || 0);
     var isCompleted = item.status === 'Completed';
     var isFailed = item.status === 'Failed';
-    
-    // Initialize date entries if they don't exist
     if (!stats.daily[dateKey]) {
         stats.daily[dateKey] = createEmptyStats();
     }
@@ -579,8 +624,6 @@ function updateDownloadStatistics(item) {
     if (!stats.monthly[monthKey]) {
         stats.monthly[monthKey] = createEmptyStats();
     }
-    
-    // Update statistics
     if (isCompleted) {
         stats.daily[dateKey].downloads++;
         stats.daily[dateKey].total_size += sizeBytes;
@@ -602,10 +645,7 @@ function updateDownloadStatistics(item) {
         stats.all_time.total_failed++;
     }
     
-    // Clean up old statistics (keep last 90 days, 52 weeks, 24 months)
     cleanupOldStatistics(stats);
-    
-    // Save updated statistics
     store.set('download_statistics', stats);
 }
 
@@ -641,25 +681,19 @@ function getWeekNumber(date) {
 
 function cleanupOldStatistics(stats) {
     var now = new Date();
-    var cutoffDate = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000); // 90 days ago
-    
-    // Clean up daily stats
+    var cutoffDate = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
     Object.keys(stats.daily).forEach(function(dateKey) {
         var date = new Date(dateKey);
         if (date < cutoffDate) {
             delete stats.daily[dateKey];
         }
     });
-    
-    // Clean up weekly stats (keep last 52 weeks)
     var weekKeys = Object.keys(stats.weekly).sort();
     if (weekKeys.length > 52) {
         weekKeys.slice(0, weekKeys.length - 52).forEach(function(key) {
             delete stats.weekly[key];
         });
     }
-    
-    // Clean up monthly stats (keep last 24 months)
     var monthKeys = Object.keys(stats.monthly).sort();
     if (monthKeys.length > 24) {
         monthKeys.slice(0, monthKeys.length - 24).forEach(function(key) {
@@ -693,7 +727,6 @@ function showNotification(title, message, type) {
         var lastNotified = result[notificationKey] || 0;
         var now = Date.now();
         
-        // Don't show same notification more than once per 10 minutes
         if (now - lastNotified < 10 * 60 * 1000) return;
         
         chrome.notifications.create({
@@ -702,8 +735,6 @@ function showNotification(title, message, type) {
             title: title,
             message: message
         });
-        
-        // Store when we last showed this notification
         chrome.storage.local.set({ [notificationKey]: now });
     });
 }
@@ -723,7 +754,20 @@ function resetSettings() {
 
 function restartTimer() {
     chrome.alarms.clear('refresh');
-    startTimer();
+    chrome.storage.local.get(['config_refresh_rate'], function(result) {
+        if (result.config_refresh_rate !== undefined) {
+            store.data.config_refresh_rate = result.config_refresh_rate;
+        }
+        
+        // Ensure store is ready before accessing settings
+        if (store.isReady) {
+            startTimer();
+        } else {
+            store.ready(function() {
+                startTimer();
+            });
+        }
+    });
 }
 
 function startTimer() {
@@ -731,7 +775,6 @@ function startTimer() {
     if (refreshRate > 0) {
         var minutes = refreshRate / 60000;
         chrome.alarms.create('refresh', { periodInMinutes: minutes });
-    } else {
     }
 }
 
@@ -880,10 +923,73 @@ function SetupContextMenu() {
     }
 }
 
+
+function uploadNZBToSABnzbd(nzbBlob, filename) {
+    const sabApiUrl = constructApiUrl();
+    const data = constructApiPost();
+    data.mode = 'addfile';
+    data.output = 'json';
+    
+    var ignoreCategories = store.get('config_ignore_categories');
+    
+    if (ignoreCategories === true) {
+    } else {
+        var hardCodedCategory = store.get('config_hard_coded_category');
+        var defaultCategory = store.get('config_default_category');
+        
+        if (hardCodedCategory && hardCodedCategory.trim() !== '') {
+            data.cat = hardCodedCategory.trim();
+        } else if (defaultCategory && defaultCategory.trim() !== '') {
+            data.cat = defaultCategory.trim();
+        }
+    }
+    
+    // Create form data
+    const formData = new FormData();
+    Object.keys(data).forEach(key => {
+        formData.append(key, data[key]);
+    });
+    
+    // Add the NZB file
+    formData.append('nzbfile', nzbBlob, filename);
+    
+    const profile = activeProfile();
+    const headers = {};
+    if (profile.username && profile.password) {
+        headers['Authorization'] = 'Basic ' + btoa(profile.username + ':' + profile.password);
+    }
+    
+    // Create AbortController for timeout
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+    
+    fetch(sabApiUrl, {
+        method: 'POST',
+        headers: headers,
+        body: formData,
+        signal: controller.signal
+    })
+    .then(response => {
+        clearTimeout(timeoutId);
+        if (!response.ok) {
+            throw new Error('Network response was not ok');
+        }
+        return response.json();
+    })
+    .then(data => {
+        // Handle response silently
+    })
+    .catch(error => {
+        clearTimeout(timeoutId);
+        // Handle error silently
+    });
+}
+
 function addToSABnzbd(request, sendResponse) {
     var nzburl = request.nzburl;
     var mode = request.mode;
     var nzbname = request.nzbname;
+    var category = request.category;
     
     var sabApiUrl = constructApiUrl();
     var data = constructApiPost();
@@ -894,6 +1000,28 @@ function addToSABnzbd(request, sendResponse) {
         data.nzbname = nzbname;
     }
     
+    var ignoreCategories = store.get('config_ignore_categories');
+    
+    if (ignoreCategories === true) {
+    } else {
+        var hardCodedCategory = store.get('config_hard_coded_category');
+        var defaultCategory = store.get('config_default_category');
+        
+        
+        if (hardCodedCategory && hardCodedCategory.trim() !== '') {
+            // Priority 1: Use hard-coded category
+            data.cat = hardCodedCategory.trim();
+        } else if (category) {
+            // Priority 2: Use site category
+            data.cat = category;
+        } else if (defaultCategory && defaultCategory.trim() !== '') {
+            // Priority 3: Use default category
+            data.cat = defaultCategory.trim();
+        } else {
+        }
+    }
+    
+    
     var url = new URL(sabApiUrl);
     Object.keys(data).forEach(key => url.searchParams.append(key, data[key]));
     
@@ -903,11 +1031,17 @@ function addToSABnzbd(request, sendResponse) {
         headers['Authorization'] = 'Basic ' + btoa(profile.username + ':' + profile.password);
     }
     
+    // Create AbortController for timeout
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+    
     fetch(url, {
         method: 'GET',
-        headers: headers
+        headers: headers,
+        signal: controller.signal
     })
     .then(response => {
+        clearTimeout(timeoutId);
         if (!response.ok) {
             throw new Error('Network response was not ok');
         }
@@ -917,6 +1051,7 @@ function addToSABnzbd(request, sendResponse) {
         sendResponse({ ret: 'success', data: data });
     })
     .catch(error => {
+        clearTimeout(timeoutId);
         sendResponse({ ret: 'error' });
     });
     
@@ -956,7 +1091,13 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         case 'initialize':
             if (request.provider) {
                 var setting = 'provider_' + request.provider;
-                sendResponse({ response: request.action, enabled: store.get(setting) });
+                var value = store.get(setting);
+                // Special handling for newznab which stores a comma-separated list
+                if (request.provider === 'newznab' && typeof value === 'string') {
+                    sendResponse({ response: request.action, enabled: value.length > 0 });
+                } else {
+                    sendResponse({ response: request.action, enabled: value });
+                }
             }
             break;
         case 'set_setting':
@@ -969,6 +1110,27 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         case 'addToSABnzbd':
             addToSABnzbd(request, sendResponse);
             return true;
+        case 'contextMenuAddUrl':
+            // Handle context menu URL with authentication (fallback)
+            addToSABnzbd({ 
+                nzburl: request.url, 
+                mode: 'addurl' 
+            }, function(response) {
+                // Handle response if needed
+            });
+            break;
+        case 'uploadNZBFile':
+            // Handle NZB file upload from content script
+            const binaryString = atob(request.fileData);
+            const bytes = new Uint8Array(binaryString.length);
+            for (let i = 0; i < binaryString.length; i++) {
+                bytes[i] = binaryString.charCodeAt(i);
+            }
+            const nzbBlob = new Blob([bytes], { type: 'application/x-nzb' });
+            
+            // Upload to SABnzbd
+            uploadNZBToSABnzbd(nzbBlob, request.filename);
+            break;
         case 'get_categories':
             var params = { mode: 'get_cats' };
             sendSabRequest(params, sendResponse);
@@ -1023,6 +1185,57 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             sendResponse({ success: true });
             break;
         case 'profileChanged':
+            settingsChanging = true;
+            
+            chrome.alarms.clear('refresh');
+            
+            if (request.profileName) {
+                profiles.setActiveProfile(request.profileName);
+            }
+            
+            chrome.storage.local.remove(['last_successful_data', 'last_successful_profile', 'last_successful_timestamp', 'queue_info', 'status', 'speed', 'sizeleft', 'queue', 'error', 'paused', 'timeleft', 'speedlog']);
+            
+            setTimeout(function() {
+                settingsChanging = false;
+                currentProfileForRefresh = request.profileName;
+                refresh(false, function() {
+                    startTimer();
+                    chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
+                        if (tabs[0]) {
+                            chrome.tabs.sendMessage(tabs[0].id, {action: 'refresh_popup'});
+                        }
+                    });
+                });
+            }, 100);
+            
+            sendResponse({ success: true });
+            break;
+        case 'settings_changed':
+            // Set flag to prevent old alarms from firing
+            settingsChanging = true;
+            
+            // Cancel the current refresh timer
+            chrome.alarms.clear('refresh');
+            // Reload ALL settings from storage before refreshing
+            chrome.storage.local.get(null, function(allSettings) {
+                    // Update the store data with all settings
+                store.data = { ...store.defaults, ...allSettings };
+                    
+                // Trigger immediate refresh to reflect new settings
+                refresh(false, function() {
+                            
+                    // Ensure store is ready before accessing settings
+                    if (store.isReady) {
+                        startTimer();
+                                    settingsChanging = false;
+                                } else {
+                                    store.ready(function() {
+                                            startTimer();
+                                settingsChanging = false;
+                                        });
+                    }
+                });
+            }); // End of chrome.storage.local.get
             sendResponse({ success: true });
             break;
         case 'getStatistics':
@@ -1110,16 +1323,156 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     }
 });
 
+// Global flag to prevent old timer from firing during settings change
+var settingsChanging = false;
+var currentProfileForRefresh = null;
+
 // Alarm handler
 chrome.alarms.onAlarm.addListener((alarm) => {
-    if (alarm.name === 'refresh') {
+    if (alarm.name === 'refresh' && !settingsChanging) {
         refresh();
+    } else if (settingsChanging) {
     }
 });
 
 // Context menu handler
 chrome.contextMenus.onClicked.addListener((info, tab) => {
     if (info.menuItemId === "SABconnect" && info.linkUrl) {
+        // Check if this is a Newznab URL that needs authentication processing
+        const newznab_urls_pre = store.get('provider_newznab');
+        if (newznab_urls_pre && newznab_urls_pre.length > 0) {
+            const newznab_urls = newznab_urls_pre.split(',').map(url => url.trim());
+            const linkUrl = new URL(info.linkUrl);
+            
+            // Check if the URL matches any configured Newznab providers
+            const isNewznabUrl = newznab_urls.some(newznab_url => {
+                return linkUrl.hostname.includes(newznab_url) || 
+                       linkUrl.hostname === newznab_url ||
+                       info.linkUrl.includes(newznab_url);
+            });
+            
+            if (isNewznabUrl) {
+                // For Newznab URLs, download the file from content script context (has cookies)
+                chrome.scripting.executeScript({
+                    target: { tabId: tab.id },
+                    func: (originalUrl) => {
+                        // Fix nzbstars.com URLs that have wrong page parameter
+                        if (originalUrl.includes('nzbstars.com') && originalUrl.includes('page=getspot')) {
+                            const url = new URL(originalUrl);
+                            url.searchParams.set('page', 'getnzb');
+                            url.searchParams.set('action', 'display');
+                            originalUrl = url.toString();
+                        }
+                        
+                        // Download the NZB file using fetch (has access to cookies)
+                        const controller = new AbortController();
+                        const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout for file downloads
+                        
+                        fetch(originalUrl, { signal: controller.signal })
+                            .then(response => {
+                                clearTimeout(timeoutId);
+                                if (!response.ok) {
+                                    throw new Error(`HTTP error! status: ${response.status}`);
+                                }
+                                
+                                const responseHeaders = response.headers;
+                                return response.text().then(text => ({ text, responseHeaders }));
+                            })
+                            .then(({ text, responseHeaders }) => {
+                                // Validate that this is actually an NZB file
+                                if (!text.includes('<?xml') && !text.includes('<nzb')) {
+                                    throw new Error('Downloaded content is not a valid NZB file');
+                                }
+                                
+                                if (text.includes('<html') || text.includes('<HTML')) {
+                                    throw new Error('Downloaded content is an HTML page, not an NZB file');
+                                }
+                                
+                                // Extract filename from various sources
+                                let nzbFilename = 'download.nzb';
+                                
+                                // Try to get filename from Content-Disposition header
+                                const contentDisposition = responseHeaders.get('content-disposition');
+                                if (contentDisposition) {
+                                    const filenameMatch = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
+                                    if (filenameMatch && filenameMatch[1]) {
+                                        nzbFilename = filenameMatch[1].replace(/['"]/g, '');
+                                    }
+                                }
+                                
+                                // Try to extract from NZB XML content
+                                if (nzbFilename === 'download.nzb') {
+                                    const fileMatch = text.match(/<file[^>]*subject="([^"]*)"[^>]*>/);
+                                    if (fileMatch && fileMatch[1]) {
+                                        nzbFilename = fileMatch[1]
+                                            .replace(/[<>:"/\\|?*]/g, '_')
+                                            .replace(/^Re:\s*/i, '')
+                                            .substring(0, 100)
+                                            .trim();
+                                        if (!nzbFilename.endsWith('.nzb')) {
+                                            nzbFilename += '.nzb';
+                                        }
+                                    }
+                                }
+                                
+                                // Fallback: try to extract from URL (for nzbstars.com messageid)
+                                if (nzbFilename === 'download.nzb') {
+                                    const urlParts = originalUrl.split('?');
+                                    if (urlParts.length > 1) {
+                                        const urlParams = new URLSearchParams(urlParts[1]);
+                                        const messageId = urlParams.get('messageid');
+                                        if (messageId) {
+                                            nzbFilename = `nzbstars_${messageId.replace(/[<>:"/\\|?*@]/g, '_')}.nzb`;
+                                        }
+                                    }
+                                }
+                                
+                                // Convert to blob for upload
+                                const blob = new Blob([text], { type: 'application/x-nzb' });
+                                
+                                // Convert blob to base64 for transmission to service worker
+                                const reader = new FileReader();
+                                reader.onload = function() {
+                                    const base64data = reader.result.split(',')[1];
+                                    
+                                    // Send the NZB file data to service worker
+                                    chrome.runtime.sendMessage({
+                                        action: 'uploadNZBFile',
+                                        fileData: base64data,
+                                        filename: nzbFilename
+                                    });
+                                };
+                                reader.readAsDataURL(blob);
+                            })
+                            .catch(error => {
+                                clearTimeout(timeoutId);
+                                // Fallback: try to authenticate and send URL
+                                var uid = null, rsstoken = null, queryString = '';
+                                
+                                var uidInput = document.querySelector('[name=UID]');
+                                var rsstokenInput = document.querySelector('[name=RSSTOKEN]');
+                                if (uidInput && uidInput.value) uid = uidInput.value;
+                                if (rsstokenInput && rsstokenInput.value) rsstoken = rsstokenInput.value;
+                                
+                                if (uid && rsstoken) {
+                                    queryString = '?i=' + uid + '&r=' + rsstoken + '&del=1';
+                                }
+                                
+                                var finalUrl = queryString ? originalUrl + queryString : originalUrl;
+                                
+                                chrome.runtime.sendMessage({
+                                    action: 'contextMenuAddUrl',
+                                    url: finalUrl
+                                });
+                            });
+                    },
+                    args: [info.linkUrl]
+                });
+                return;
+            }
+        }
+        
+        // For non-Newznab URLs, use direct approach
         addToSABnzbd({ 
             nzburl: info.linkUrl, 
             mode: 'addurl' 
@@ -1146,26 +1499,35 @@ function fetchStatisticsFromSAB(period, callback) {
                         
                         // The API returns simple numeric values for bytes downloaded
                         // No download counts are provided, only total bytes
-                        switch (period) {
-                            case 'today':
-                                if (data.day !== undefined) {
-                                    stats.downloads = '-'; // Count not available
-                                    stats.total_size = parseFloat(data.day) || 0;
-                                }
-                                break;
-                            case 'month':
-                                if (data.month !== undefined) {
-                                    stats.downloads = '-'; // Count not available
-                                    stats.total_size = parseFloat(data.month) || 0;
-                                }
-                                break;
-                            case 'all_time':
-                            default:
-                                if (data.total !== undefined) {
-                                    stats.downloads = '-'; // Count not available
-                                    stats.total_size = parseFloat(data.total) || 0;
-                                }
-                                break;
+                        if (period === 'all') {
+                            // Return all statistics in a single response
+                            stats = {
+                                day: parseFloat(data.day) || 0,
+                                month: parseFloat(data.month) || 0,
+                                total: parseFloat(data.total) || 0
+                            };
+                        } else {
+                            switch (period) {
+                                case 'today':
+                                    if (data.day !== undefined) {
+                                        stats.downloads = '-'; // Count not available
+                                        stats.total_size = parseFloat(data.day) || 0;
+                                    }
+                                    break;
+                                case 'month':
+                                    if (data.month !== undefined) {
+                                        stats.downloads = '-'; // Count not available
+                                        stats.total_size = parseFloat(data.month) || 0;
+                                    }
+                                    break;
+                                case 'all_time':
+                                default:
+                                    if (data.total !== undefined) {
+                                        stats.downloads = '-'; // Count not available
+                                        stats.total_size = parseFloat(data.total) || 0;
+                                    }
+                                    break;
+                            }
                         }
                         
                         callback(stats);
@@ -1190,6 +1552,89 @@ function fetchStatisticsFromSAB(period, callback) {
         callback(getDownloadStatistics(period));
     }
 }
+
+// Newznab dynamic content script injection
+chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
+    if (changeInfo.status === 'complete' && tab.url) {
+        try {
+            let found_nab = false;
+            const newznab_urls_pre = await store.get('provider_newznab');
+            
+            if (!newznab_urls_pre || typeof newznab_urls_pre !== 'string') {
+                return;
+            }
+            
+            const newznab_urls = newznab_urls_pre.split(',').map(url => url.trim()).filter(url => url.length > 0);
+            const parsedUrl = new URL(tab.url);
+            const host = parsedUrl.hostname.match(/([^.]+)\.\w{2,3}(?:\.\w{2})?$/)?.[0] || parsedUrl.hostname;
+            
+            // Check if this is a configured Newznab site
+            for (const newznab_url of newznab_urls) {
+                const matchesUrl = tab.url.includes(newznab_url);
+                const matchesHostname = parsedUrl.hostname.includes(newznab_url);
+                const matchesExactHostname = parsedUrl.hostname === newznab_url;
+                
+                if (matchesUrl || matchesHostname || matchesExactHostname) {
+                            // Inject scripts for Newznab
+                    await chrome.scripting.executeScript({
+                        target: { tabId: tabId, allFrames: true },
+                        files: [
+                            "third_party/jquery/jquery-1.12.4.min.js",
+                            "scripts/content/common.js",
+                            "third_party/webtoolkit/webtoolkit.base64.js",
+                            "scripts/content/newznab.js"
+                        ]
+                    });
+                    
+                    await chrome.scripting.insertCSS({
+                        target: { tabId: tabId },
+                        files: ["css/newznab.css"]
+                    });
+                    
+                    const nabIgnoreKey = `nabignore.${host}`;
+                    const nabIgnored = await store.get(nabIgnoreKey);
+                    if (nabIgnored === false) {
+                        await store.set(nabIgnoreKey, true);
+                    }
+                    
+                    found_nab = true;
+                    break;
+                }
+            }
+            
+            // Auto-detection for new Newznab sites
+            if (!found_nab && tab.url.startsWith('http')) {
+                const nabIgnoreKey = `nabignore.${host}`;
+                const nabenabled = await store.get(nabIgnoreKey);
+                const nabdetection = await store.get('config_enable_automatic_detection');
+                
+                if (nabdetection && !nabenabled) {
+                    await chrome.scripting.executeScript({
+                        target: { tabId: tabId },
+                        files: [
+                            "third_party/jquery/jquery-1.12.4.min.js",
+                            "third_party/jquery/jquery.notify.js",
+                            "scripts/content/common.js",
+                            "scripts/pages/newznab-autoadd.js"
+                        ]
+                    });
+                    
+                    await chrome.scripting.insertCSS({
+                        target: { tabId: tabId },
+                        files: ["css/nabnotify.css"]
+                    });
+                }
+                
+                if (nabenabled === false) {
+                    await store.set(nabIgnoreKey, true);
+                }
+            }
+        } catch (error) {
+            // Silently fail - this could happen if we don't have permission for the tab
+            console.debug('Error injecting Newznab scripts:', error);
+        }
+    }
+});
 
 // Initialize when service worker starts
 store.init(function() {

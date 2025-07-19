@@ -177,7 +177,6 @@ body {
     font-size: 20px;
     font-weight: 600;
     color: var(--text-primary);
-    border-bottom: 1px solid var(--border-color);
 }
 
 /* Individual Settings */
@@ -185,14 +184,11 @@ body {
     margin: 0;
     padding: 25px 30px;
     border: none;
-    border-bottom: 1px solid var(--border-color);
     background: var(--primary-bg);
     transition: all 0.2s ease;
 }
 
-.setting:last-child {
-    border-bottom: none;
-}
+/* No more border-bottom rules needed */
 
 .setting:hover {
     background: var(--secondary-bg);
@@ -518,3 +514,291 @@ input[type='submit'][disabled] {
 #sidebar::-webkit-scrollbar-thumb:hover {
     background: rgba(255, 255, 255, 0.5);
 }
+
+/* Compact Providers Section - 2-Column Layout */
+.settings-group:has(.setting[data-name*="provider_"]) {
+    margin-bottom: 20px;
+}
+
+/* Create 2-column grid layout for provider checkboxes only */
+.settings-group:has(.setting[data-name*="provider_"]) {
+    display: flex;
+    flex-direction: column;
+}
+
+/* Native grid support added to fancy-settings framework */
+.settings-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0;
+    margin: 10px 0;
+}
+
+.settings-grid .setting {
+    margin: 0;
+    border-radius: 0;
+    border: none;
+    border-right: 1px solid var(--border-color);
+    padding: 15px 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: var(--primary-bg);
+}
+
+.settings-grid .setting:nth-child(even) {
+    border-right: none;
+}
+
+.settings-grid .setting label {
+    margin-bottom: 0;
+    font-size: 14px;
+    font-weight: 500;
+    flex: 1;
+    color: var(--text-primary);
+}
+
+.settings-grid .setting input[type="checkbox"] {
+    margin: 0;
+    margin-left: 12px;
+    transform: scale(1.1);
+    accent-color: var(--accent-blue);
+}
+
+/* Additional styling for provider badges and special sections */
+.settings-grid .setting[data-name="provider_binsearch"] label:after,
+.settings-grid .setting[data-name="provider_nzbindex"] label:after,
+.settings-grid .setting[data-name="provider_dognzb"] label:after,
+.settings-grid .setting[data-name="provider_nzbclub"] label:after {
+    content: "Popular";
+    display: inline-block;
+    background: var(--accent-blue);
+    color: white;
+    font-size: 10px;
+    padding: 2px 6px;
+    border-radius: 12px;
+    margin-left: 8px;
+    font-weight: 500;
+}
+
+.settings-group:has(.setting[data-name*="provider_"]) .setting {
+    padding: 15px 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    min-height: auto;
+}
+
+.settings-group:has(.setting[data-name*="provider_"]) .setting label {
+    margin-bottom: 0;
+    font-size: 14px;
+    font-weight: 500;
+    flex: 1;
+    color: var(--text-primary);
+}
+
+.settings-group:has(.setting[data-name*="provider_"]) .setting input[type="checkbox"] {
+    margin: 0;
+    transform: scale(1.1);
+    accent-color: var(--accent-blue);
+}
+
+.settings-group:has(.setting[data-name*="provider_"]) .setting input[type="text"] {
+    max-width: 400px;
+    flex: 1;
+    margin-left: 15px;
+}
+
+/* Fallback for browsers that don't support :has() */
+.providers-compact .setting {
+    padding: 15px 20px !important;
+    border-bottom: 1px solid var(--border-color) !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    min-height: auto !important;
+}
+
+.providers-compact .setting:last-child {
+    border-bottom: none !important;
+}
+
+/* Fallback styling for grid items in providers-checkbox-grid */
+.providers-compact .providers-checkbox-grid .setting {
+    padding: 15px 20px !important;
+    border-bottom: 1px solid var(--border-color) !important;
+    border-right: 1px solid var(--border-color) !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    min-height: auto !important;
+    margin: 0 !important;
+    background: var(--primary-bg) !important;
+}
+
+.providers-compact .providers-checkbox-grid .setting:nth-child(even) {
+    border-right: none !important;
+}
+
+.providers-compact .providers-checkbox-grid .setting:nth-last-child(-n+2) {
+    border-bottom: none !important;
+}
+
+.providers-compact .providers-checkbox-grid .setting:last-child {
+    border-bottom: none !important;
+}
+
+.providers-compact .setting label {
+    margin-bottom: 0 !important;
+    font-size: 14px !important;
+    font-weight: 500 !important;
+    flex: 1 !important;
+    color: var(--text-primary) !important;
+}
+
+.providers-compact .setting input[type="checkbox"] {
+    margin: 0 !important;
+    transform: scale(1.1) !important;
+    accent-color: var(--accent-blue) !important;
+}
+
+.providers-compact .setting input[type="text"] {
+    max-width: 400px !important;
+    flex: 1 !important;
+    margin-left: 15px !important;
+}
+
+/* Provider categories styling */
+.providers-compact .setting[data-name="provider_description"] {
+    background: var(--secondary-bg);
+    padding: 20px;
+    border-radius: 8px;
+    margin-bottom: 10px;
+    border: 1px solid var(--border-color);
+}
+
+.providers-compact .setting[data-name="provider_description"] .description {
+    font-size: 14px;
+    line-height: 1.5;
+    color: var(--text-secondary);
+    margin: 0;
+}
+
+/* Group popular providers together */
+.providers-compact .setting[data-name="provider_binsearch"],
+.providers-compact .setting[data-name="provider_nzbindex"],
+.providers-compact .setting[data-name="provider_dognzb"],
+.providers-compact .setting[data-name="provider_nzbclub"] {
+    background: var(--secondary-bg);
+    font-weight: 600;
+}
+
+.providers-compact .setting[data-name="provider_binsearch"] label:after,
+.providers-compact .setting[data-name="provider_nzbindex"] label:after,
+.providers-compact .setting[data-name="provider_dognzb"] label:after,
+.providers-compact .setting[data-name="provider_nzbclub"] label:after {
+    content: "Popular";
+    display: inline-block;
+    background: var(--accent-blue);
+    color: white;
+    font-size: 10px;
+    padding: 2px 6px;
+    border-radius: 12px;
+    margin-left: 8px;
+    font-weight: 500;
+}
+
+/* Special styling for Newznab text input */
+.providers-compact .setting[data-name="provider_newznab"] {
+    background: var(--secondary-bg);
+    padding: 20px;
+    border-radius: 8px;
+    margin: 10px 0;
+    border: 1px solid var(--border-color);
+    flex-direction: column;
+    align-items: flex-start;
+}
+
+.providers-compact .setting[data-name="provider_newznab"] label {
+    font-weight: 600;
+    margin-bottom: 10px;
+    color: var(--text-primary);
+}
+
+.providers-compact .setting[data-name="provider_newznab"] input[type="text"] {
+    width: 100%;
+    margin-left: 0;
+    max-width: none;
+}
+
+/* Display Options section styling */
+.providers-compact .setting[data-name*="use_name_"] {
+    background: var(--secondary-bg);
+    opacity: 0.9;
+}
+
+.providers-compact .setting[data-name*="use_name_"] label {
+    font-size: 13px;
+    color: var(--text-secondary);
+}
+
+/* Modern grid layout for checkboxes */
+.providers-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 10px;
+    margin: 20px 0;
+}
+
+.providers-grid .setting {
+    background: var(--secondary-bg);
+    padding: 15px;
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+    transition: all 0.2s ease;
+}
+
+.providers-grid .setting:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px var(--shadow-light);
+    border-color: var(--border-hover);
+}
+
+.providers-grid .setting input[type="checkbox"]:checked + label:after {
+    content: "✓";
+    position: absolute;
+    right: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--accent-green);
+    font-weight: bold;
+}
+
+.providers-grid .setting {
+    position: relative;
+}
+
+/* Responsive design for providers */
+@media (max-width: 768px) {
+    /* Switch to single column on mobile */
+    .settings-grid {
+        grid-template-columns: 1fr !important;
+    }
+    
+    .settings-grid .setting {
+        border-right: none !important;
+    }
+    
+    .providers-compact .setting {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 10px;
+    }
+    
+    .providers-compact .setting input[type="text"] {
+        width: 100%;
+        margin-left: 0;
+    }
+}
+
+/* Fallback CSS cleaned up - no more border rules */

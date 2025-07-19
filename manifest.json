@@ -1,7 +1,7 @@
 {
 	"manifest_version": 3,
 	"name": "SABconnect++",
-	"version": "1.9.36",
+	"version": "2.0.0",
 	"description": "SABnzbd extension for Google Chrome.",
 	"minimum_chrome_version": "88.0",
 	"background": {
@@ -33,7 +33,8 @@
 		"notifications",
 		"contextMenus",
 		"storage",
-		"alarms"
+		"alarms",
+		"scripting"
 	],
 	"host_permissions": [
 		"*://*/*"

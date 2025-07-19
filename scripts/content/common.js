@@ -67,18 +67,16 @@ function addToSABnzbd(addLink, nzburl, mode, nice_name, category) {
 		request.nzbname = nice_name;
 	}
 
-	GetSetting('config_ignore_categories', function( value ) {
-		ignoreCats = value;
-	});
-	if (!ignoreCats && typeof category != 'undefined' && category != null) {
+	// Always pass the category from the site if provided
+	// The background script will decide whether to use it or the hard-coded one
+	if (typeof category != 'undefined' && category != null) {
 		request.category = category;
 	}
-	
 	
 	chrome.runtime.sendMessage(
 		request,
 		function(response) { onResponseAdd( response, addLink ) }
-		);
+	);
 }
 
 function GetSetting( setting, callback )
@@ -117,11 +115,12 @@ function Initialize( provider, refresh_function, callback )
 	}
 		
 	chrome.runtime.sendMessage( request, function( response ) {
-		if( response.enabled ) {
+		console.log('SABconnect++ Initialize: Received response:', response);
+		if( response && response.enabled ) {
 			callback();
 		}
 		else {
-			console.info( 'SABconnect: 1-click functionality for this site is disabled' );
+			console.info( 'SABconnect: 1-click functionality for this site is disabled or no response received' );
 		}
 	});
 	
@@ -139,3 +138,62 @@ function OnRequest( request, sender, onResponse )
 };
 
 chrome.runtime.onMessage.addListener( OnRequest );
+
+// Fallback function to find and add icons to download links
+function addIconsWithFallback(options) {
+	options = options || {};
+	var linkSelector = options.linkSelector || 'a[href*="/download/"], a[href*=".nzb"], a[href*="/getnzb/"]';
+	var iconClass = options.iconClass || 'addSABnzbd';
+	var processedAttr = options.processedAttr || 'x-sab-processed';
+	var iconStyle = options.iconStyle || 'margin-right: 5px;';
+	var clickHandler = options.clickHandler || function(e) {
+		e.preventDefault();
+		e.stopPropagation();
+		var $link = $(this);
+		var href = $link.attr('href');
+		addToSABnzbd(this, href, 'addurl', null, null);
+		return false;
+	};
+	
+	var oneClickImgTag = '<img style="vertical-align:baseline" src="' + chrome.runtime.getURL('/images/content_icon.png') + '" title="Send to SABnzbd" />';
+	var addedCount = 0;
+	
+	$(linkSelector).each(function() {
+		var $link = $(this);
+		
+		// Skip if already processed
+		if ($link.attr(processedAttr) === 'true' || $link.hasClass(iconClass)) {
+			return;
+		}
+		
+		// Skip if parent already has our icon
+		if ($link.parent().find('.' + iconClass).length > 0) {
+			return;
+		}
+		
+		// Mark as processed
+		$link.attr(processedAttr, 'true');
+		
+		// Create and insert icon
+		var $iconLink = $('<a class="' + iconClass + '" ' + processedAttr + '="true" href="' + $link.attr('href') + '" style="' + iconStyle + '">' + oneClickImgTag + '</a>');
+		$link.before($iconLink);
+		$iconLink.on('click', clickHandler);
+		
+		addedCount++;
+	});
+	
+	if (addedCount > 0) {
+		console.log('SABconnect++ Fallback: Added ' + addedCount + ' icons');
+	} else {
+		// If still no links found, log what we see
+		console.log('SABconnect++ Fallback: No matching links found with selector:', linkSelector);
+		console.log('SABconnect++ Fallback: Total anchors on page:', $('a').length);
+		
+		// Log first few link hrefs for debugging
+		$('a').slice(0, 5).each(function(i) {
+			console.log('SABconnect++ Fallback: Link ' + i + ':', $(this).attr('href'));
+		});
+	}
+	
+	return addedCount;
+}

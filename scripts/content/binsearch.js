@@ -75,6 +75,17 @@ function RefreshSettings()
 }
 
 Initialize( 'binsearch', RefreshSettings, function() {
+	console.log('SABconnect++ Binsearch: Script initialized');
 	handleAllDownloadLinks();
+	
+	// Fallback if no icons were added
+	if ($('a.addSABnzbd').length === 0) {
+		console.log('SABconnect++ Binsearch: No icons added, trying fallback...');
+		addIconsWithFallback({
+			linkSelector: 'a[href*="action=nzb"], input[type=checkbox][name^="m_"]',
+			iconClass: 'addSABnzbd',
+			clickHandler: oneClick
+		});
+	}
 });
 })(jQuery);

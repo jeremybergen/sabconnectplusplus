@@ -1,17 +1,74 @@
 
 (function() { // Encapsulate
 
-	var queryString = '?i=' + $('[name=UID]').val() + '&r=' + $('[name=RSSTOKEN]').val() + '&del=1',
+	var queryString = '',
 		oneClickImgTag = '<img style="vertical-align:baseline" src="' + chrome.runtime.getURL('/images/content_icon.png') + '" />',
 		ignoreCats,
 		linkRelAlternate = $('link[rel=alternate]').attr('href');
 
-	if (linkRelAlternate) {
+	// Debug authentication parameters
+	var uid = $('[name=UID]').val();
+	var rsstoken = $('[name=RSSTOKEN]').val();
+	console.log('SABconnect++ Newznab: Authentication debug:');
+	console.log('SABconnect++ Newznab: UID found:', uid ? 'Yes (' + uid + ')' : 'No');
+	console.log('SABconnect++ Newznab: RSSTOKEN found:', rsstoken ? 'Yes (' + rsstoken.substring(0, 10) + '...)' : 'No');
+	console.log('SABconnect++ Newznab: Link rel=alternate:', linkRelAlternate);
+
+	// Build authentication queryString only if we have valid authentication
+	if (uid && rsstoken) {
+		queryString = '?i=' + uid + '&r=' + rsstoken + '&del=1';
+		console.log('SABconnect++ Newznab: Using standard form auth');
+	} else if (linkRelAlternate) {
 		var found = linkRelAlternate.match(/([\?&]i=.+$)/);
 		if (found) {
 			queryString = '?' + found[0];
+			console.log('SABconnect++ Newznab: Using queryString from link rel=alternate:', queryString);
+		}
+	} else {
+		console.log('SABconnect++ Newznab: Standard auth not found, trying alternatives...');
+		
+		// Try to find auth in meta tags
+		var metaUID = $('meta[name="uid"]').attr('content');
+		var metaToken = $('meta[name="rsstoken"]').attr('content');
+		
+		// Try to find auth in data attributes
+		var dataUID = $('[data-uid]').attr('data-uid');
+		var dataToken = $('[data-rsstoken]').attr('data-rsstoken');
+		
+		// Try to find auth in the page source/scripts
+		var scriptUID = null, scriptToken = null;
+		$('script').each(function() {
+			var scriptText = $(this).text();
+			var uidMatch = scriptText.match(/uid['":\s]*['"]([^'"]+)['"]/i);
+			var tokenMatch = scriptText.match(/(?:rsstoken|apikey|token)['":\s]*['"]([^'"]+)['"]/i);
+			if (uidMatch) scriptUID = uidMatch[1];
+			if (tokenMatch) scriptToken = tokenMatch[1];
+		});
+		
+		console.log('SABconnect++ Newznab: Alternative auth search:');
+		console.log('SABconnect++ Newznab: Meta UID:', metaUID);
+		console.log('SABconnect++ Newznab: Meta Token:', metaToken);
+		console.log('SABconnect++ Newznab: Data UID:', dataUID);
+		console.log('SABconnect++ Newznab: Data Token:', dataToken);
+		console.log('SABconnect++ Newznab: Script UID:', scriptUID);
+		console.log('SABconnect++ Newznab: Script Token:', scriptToken);
+		
+		// Use alternative auth if found
+		if (metaUID && metaToken) {
+			queryString = '?i=' + metaUID + '&r=' + metaToken + '&del=1';
+			console.log('SABconnect++ Newznab: Using meta auth');
+		} else if (dataUID && dataToken) {
+			queryString = '?i=' + dataUID + '&r=' + dataToken + '&del=1';
+			console.log('SABconnect++ Newznab: Using data auth');
+		} else if (scriptUID && scriptToken) {
+			queryString = '?i=' + scriptUID + '&r=' + scriptToken + '&del=1';
+			console.log('SABconnect++ Newznab: Using script auth');
+		} else {
+			console.log('SABconnect++ Newznab: No authentication found - will use URLs as-is');
 		}
 	}
+
+	console.log('SABconnect++ Newznab: Final queryString:', queryString);
 
 	GetSetting('config_ignore_categories', function( value ) {
 		ignoreCats = value;
@@ -68,9 +125,14 @@
 	}
 
 	Initialize('newznab', null, function() {
+		console.log('SABconnect++ Newznab: Script initialized');
+		console.log('SABconnect++ Newznab: Found existing addSABnzbd links:', $('a.addSABnzbd').length);
 
 		if ($('a.addSABnzbd').length == 0) {
 			// Cover view: Loop through each #coverstable and #browselongtable row and add a one click link next to the download link
+			console.log('SABconnect++ Newznab: Checking cover view tables');
+			console.log('SABconnect++ Newznab: #coverstable rows:', $('#coverstable > tbody > tr:gt(0)').length);
+			console.log('SABconnect++ Newznab: #browselongtable rows:', $('#browselongtable > tbody > tr:gt(0)').length);
 			$.merge(
 				$('#coverstable > tbody > tr:gt(0)'),
 				$('#browselongtable > tbody > tr:gt(0)')
@@ -93,6 +155,8 @@
 
 		if ($('a.addSABnzbd').length == 0) {
 			// List view: Loop through all the td.check items and add a one-click link next the nearby title
+			console.log('SABconnect++ Newznab: Checking list view');
+			console.log('SABconnect++ Newznab: td.check elements:', $('td.check').length);
 			$('td.check').each(function() {
 				var $tr = $(this).parent(),
 					href = $tr.find('.icon_nzb a').attr('href') || $tr.find('a.icon_nzb').attr('href');
@@ -112,6 +176,8 @@
 
 		if ($('a.addSABnzbd').length == 0) {
 			// Details view (etc.)
+			console.log('SABconnect++ Newznab: Checking details view');
+			console.log('SABconnect++ Newznab: div.icon_nzb elements:', $('div.icon_nzb').length);
 			$('div.icon_nzb').each(function() {
 				var $tr = $(this),
 					href = $(this).children("a").attr('href');
@@ -175,6 +241,178 @@
 				.find('input.cartDownload')
 				.on('click', {selector: 'tr:gt(0)'}, addMany)
 			;
+		}
+		
+		// Fallback: Try to find download links more broadly if no icons were added
+		if ($('a.addSABnzbd').length == 0 && $('a.addSABnzbdDetails').length == 0) {
+			console.log('SABconnect++ Newznab: No icons added with standard selectors. Trying fallback...');
+			console.log('SABconnect++ Newznab: Current hostname:', window.location.hostname);
+			console.log('SABconnect++ Newznab: Current URL:', window.location.href);
+			console.log('SABconnect++ Newznab: Looking for links with selectors: a[href*="/getnzb/"], a[href*=".nzb"]');
+			console.log('SABconnect++ Newznab: Found links:', $('a[href*="/getnzb/"], a[href*=".nzb"]').length);
+			
+			// Try multiple selector patterns common to different Newznab sites
+			var selectorPatterns = [
+				'a[href*="/getnzb/"], a[href*=".nzb"]',  // Standard patterns
+				'a[href*="/download/"], a[href*="get="]',  // Alternative patterns
+				'a[href*="/api"][href*="t=get"]',  // API-based downloads
+				'a[title*="Download"], a[title*="Get NZB"]',  // Title-based
+				'a[href*="/nzb/"], a[href*="nzb="]',  // NZB parameter patterns
+				'a[href*="download"][href*="nzb"]'  // Generic download+nzb pattern
+			];
+			
+			var addedCount = 0;
+			
+			// Try each pattern until we find matching links
+			for (var i = 0; i < selectorPatterns.length && addedCount === 0; i++) {
+				var pattern = selectorPatterns[i];
+				var foundLinks = $(pattern).length;
+				console.log('SABconnect++ Newznab: Trying pattern', i + 1, ':', pattern, '- Found', foundLinks, 'links');
+				
+				if (foundLinks > 0) {
+					addedCount = addIconsWithFallback({
+						linkSelector: pattern,
+						iconClass: 'addSABnzbd',
+						clickHandler: function(e) {
+							e.preventDefault();
+							var originalUrl = $(this).attr('href');
+							var finalUrl = queryString ? originalUrl + queryString : originalUrl;
+							
+							// For problematic sites like nzbstars.com, try downloading the file directly
+							if (window.location.hostname.includes('nzbstars.com')) {
+								e.preventDefault();
+								e.stopPropagation();
+								
+								fetch(originalUrl)
+									.then(response => {
+										if (!response.ok) {
+											throw new Error(`HTTP error! status: ${response.status}`);
+										}
+										
+										const responseHeaders = response.headers;
+										return response.text().then(text => ({ text, responseHeaders }));
+									})
+									.then(({ text, responseHeaders }) => {
+										// Validate that this is actually an NZB file
+										if (!text.includes('<?xml') && !text.includes('<nzb')) {
+											throw new Error('Downloaded content is not a valid NZB file');
+										}
+										
+										if (text.includes('<html') || text.includes('<HTML')) {
+											throw new Error('Downloaded content is an HTML page, not an NZB file');
+										}
+										
+										// Extract filename from various sources
+										let nzbFilename = 'download.nzb';
+										
+										// Try to get filename from Content-Disposition header
+										const contentDisposition = responseHeaders.get('content-disposition');
+										if (contentDisposition) {
+											const filenameMatch = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
+											if (filenameMatch && filenameMatch[1]) {
+												nzbFilename = filenameMatch[1].replace(/['"]/g, '');
+											}
+										}
+										
+										// Try to extract from NZB XML content
+										if (nzbFilename === 'download.nzb') {
+											const fileMatch = text.match(/<file[^>]*subject="([^"]*)"[^>]*>/);
+											if (fileMatch && fileMatch[1]) {
+												nzbFilename = fileMatch[1]
+													.replace(/[<>:"/\\|?*]/g, '_')
+													.replace(/^Re:\s*/i, '')
+													.substring(0, 100)
+													.trim();
+												if (!nzbFilename.endsWith('.nzb')) {
+													nzbFilename += '.nzb';
+												}
+											}
+										}
+										
+										// Fallback: try to extract from URL (for nzbstars.com messageid)
+										if (nzbFilename === 'download.nzb') {
+											const urlParams = new URLSearchParams(originalUrl.split('?')[1]);
+											const messageId = urlParams.get('messageid');
+											if (messageId) {
+												nzbFilename = `nzbstars_${messageId.replace(/[<>:"/\\|?*@]/g, '_')}.nzb`;
+											}
+										}
+										
+										// Convert to blob for upload
+										const blob = new Blob([text], { type: 'application/x-nzb' });
+										
+										// Convert blob to base64 for transmission to service worker
+										const reader = new FileReader();
+										reader.onload = function() {
+											const base64data = reader.result.split(',')[1];
+											
+											// Send the NZB file data to service worker
+											chrome.runtime.sendMessage({
+												action: 'uploadNZBFile',
+												fileData: base64data,
+												filename: nzbFilename
+											});
+										};
+										reader.readAsDataURL(blob);
+									})
+									.catch(error => {
+										// Fallback to regular approach
+										var $row = $(this).closest('tr');
+										if ($row.length > 0) {
+											addOne($row);
+										} else {
+											addToSABnzbd(this, finalUrl, 'addurl', null, null);
+										}
+									});
+								return false;
+							}
+							
+							var $row = $(this).closest('tr');
+							if ($row.length > 0) {
+								addOne($row);
+							} else {
+								// If not in a table row, handle differently
+								addToSABnzbd(
+									this,
+									finalUrl,
+									'addurl',
+									null,
+									null
+								);
+							}
+							return false;
+						}
+					});
+					
+					if (addedCount > 0) {
+						console.log('SABconnect++ Newznab: Successfully added', addedCount, 'icons using pattern:', pattern);
+						break;
+					}
+				}
+			}
+			
+			// Debug info only if still no icons
+			if (addedCount === 0) {
+				console.log('SABconnect++ Newznab: Debug info - still no icons added:');
+				console.log('SABconnect++ Newznab: All tables:', $('table').length);
+				console.log('SABconnect++ Newznab: All links with .nzb in href:', $('a[href*=".nzb"]').length);
+				console.log('SABconnect++ Newznab: All links with /getnzb/ in href:', $('a[href*="/getnzb/"]').length);
+				
+				// Sample some links to understand the site structure
+				console.log('SABconnect++ Newznab: Sample links on page:');
+				$('a').slice(0, 20).each(function(index, element) {
+					var href = $(element).attr('href');
+					var title = $(element).attr('title');
+					var text = $(element).text().trim();
+					if (href && (href.indexOf('download') !== -1 || href.indexOf('nzb') !== -1 || href.indexOf('get') !== -1)) {
+						console.log('SABconnect++ Newznab: Potential download link:', { href: href, title: title, text: text });
+					}
+				});
+			}
+			
+			console.log('SABconnect++ Newznab: FINAL - Total SAB icons added:', $('a.addSABnzbd').length);
+		} else {
+			console.log('SABconnect++ Newznab: Successfully added icons:', $('a.addSABnzbd').length);
 		}
 	});
 
