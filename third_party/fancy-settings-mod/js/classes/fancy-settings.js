@@ -75,13 +75,8 @@ var FancySettings = {
                 groupTitle.textContent = groupName;
                 groupDiv.appendChild(groupTitle);
                 
-                // Create settings
-                tabGroups[tabName][groupName].forEach(function(setting) {
-                    var settingElement = self.createSetting(setting);
-                    if (settingElement) {
-                        groupDiv.appendChild(settingElement);
-                    }
-                });
+                // Create settings with grid support
+                self.createSettingsWithGrid(groupDiv, tabGroups[tabName][groupName]);
                 
                 tabContent.appendChild(groupDiv);
             });
@@ -118,12 +113,106 @@ var FancySettings = {
         }
     },
     
+    createSettingsWithGrid: function(groupDiv, settings) {
+        var self = this;
+        
+        // Check if this group has grid layout specified in manifest alignment
+        var groupName = groupDiv.querySelector('h2').textContent;
+        var isGridGroup = self.shouldUseGridLayout(groupName, settings);
+        
+        if (isGridGroup) {
+            // Create grid container
+            var gridContainer = document.createElement('div');
+            gridContainer.className = 'settings-grid';
+            
+            // Separate settings into grid and non-grid items
+            var gridSettings = [];
+            var nonGridSettings = [];
+            
+            settings.forEach(function(setting) {
+                if (self.shouldBeInGrid(setting)) {
+                    gridSettings.push(setting);
+                } else {
+                    nonGridSettings.push(setting);
+                }
+            });
+            
+            // Add non-grid settings in order (descriptions first, then newznab after grid)
+            var preGridSettings = [];
+            var postGridSettings = [];
+            
+            nonGridSettings.forEach(function(setting) {
+                if (setting.name === 'provider_newznab') {
+                    postGridSettings.push(setting);
+                } else {
+                    preGridSettings.push(setting);
+                }
+            });
+            
+            // Add pre-grid settings (like descriptions)
+            preGridSettings.forEach(function(setting) {
+                var settingElement = self.createSetting(setting);
+                if (settingElement) {
+                    groupDiv.appendChild(settingElement);
+                }
+            });
+            
+            // Add grid settings to grid container
+            gridSettings.forEach(function(setting, index) {
+                var settingElement = self.createSetting(setting);
+                if (settingElement) {
+                    gridContainer.appendChild(settingElement);
+                }
+            });
+            
+            // Add grid container to group
+            if (gridSettings.length > 0) {
+                groupDiv.appendChild(gridContainer);
+            }
+            
+            // Add post-grid settings (like newznab input)
+            postGridSettings.forEach(function(setting) {
+                var settingElement = self.createSetting(setting);
+                if (settingElement) {
+                    groupDiv.appendChild(settingElement);
+                }
+            });
+        } else {
+            // Default behavior - no grid
+            settings.forEach(function(setting) {
+                var settingElement = self.createSetting(setting);
+                if (settingElement) {
+                    groupDiv.appendChild(settingElement);
+                }
+            });
+        }
+    },
+    
+    shouldUseGridLayout: function(groupName, settings) {
+        // Check if this is the providers group with checkboxes
+        if (groupName === '1-Click NZB downloading') {
+            var hasProviderCheckboxes = settings.some(function(setting) {
+                return setting.type === 'checkbox' && setting.name && setting.name.startsWith('provider_');
+            });
+            return hasProviderCheckboxes;
+        }
+        return false;
+    },
+    
+    shouldBeInGrid: function(setting) {
+        // Include checkbox providers in grid, exclude description and text inputs
+        return setting.type === 'checkbox' && 
+               setting.name && 
+               setting.name.startsWith('provider_') && 
+               setting.name !== 'provider_description' && 
+               setting.name !== 'provider_newznab';
+    },
+    
     createSetting: function(setting) {
         var self = this;
         var container = document.createElement('div');
         container.className = 'setting';
         container.style.padding = '15px 20px';
-        container.style.borderBottom = '1px solid #e9ecef';
         
         // Add Element polyfill methods to container
         this.addElementMethods(container);

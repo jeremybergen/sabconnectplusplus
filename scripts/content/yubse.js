@@ -90,16 +90,33 @@ $(document).ready(function() {
 		});
 	});
 	
-	$("#tableResult").bind('DOMNodeInserted', function(event) {
-		if (event.target.nodeName=='THEAD')//detect the THEAD construction in the table for create button one time
-		{
-			handleAllDownloadLinks();
-		}
-		else if (event.target.nodeName=='TR')//detect all the tr in the table and create button for each
-		{
-			handleSingleDownloadLink(event.target);
-		}
-	});
+	// Replace deprecated DOMNodeInserted with MutationObserver
+	var tableElement = document.getElementById('tableResult');
+	if (tableElement) {
+		var observer = new MutationObserver(function(mutations) {
+			mutations.forEach(function(mutation) {
+				if (mutation.type === 'childList') {
+					mutation.addedNodes.forEach(function(node) {
+						if (node.nodeType === Node.ELEMENT_NODE) {
+							if (node.nodeName === 'THEAD') {
+								// Detect the THEAD construction in the table for create button one time
+								handleAllDownloadLinks();
+							} else if (node.nodeName === 'TR') {
+								// Detect all the tr in the table and create button for each
+								handleSingleDownloadLink(node);
+							}
+						}
+					});
+				}
+			});
+		});
+		
+		// Start observing
+		observer.observe(tableElement, {
+			childList: true,
+			subtree: true
+		});
+	}
 });
 
  

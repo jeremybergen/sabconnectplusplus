@@ -96,11 +96,23 @@ function handleAllDownloadLinks() {
 }
 
 Initialize( 'dognzb', null, function() {
+	console.log('SABconnect++ DogNZB: Script initialized');
 	handleAllDownloadLinks();
 	sabcppDogCheck = function(){
 		if($('div[class="dog-icon-download"]').not('.sabcpp-fake-godnzb-marker').length >= 1) {
 			handleAllDownloadLinks();
 		}
+		
+		// Fallback if no icons were added
+		if ($('a.addSABnzbd').length === 0) {
+			console.log('SABconnect++ DogNZB: No icons added, trying fallback...');
+			addIconsWithFallback({
+				linkSelector: 'a[href*="/getnzb/"], a[href*="/details/"]',
+				iconClass: 'addSABnzbd',
+				clickHandler: oneClick
+			});
+		}
+		
 		setTimeout(sabcppDogCheck, 1000);
 	};
         setTimeout(sabcppDogCheck, 1000);

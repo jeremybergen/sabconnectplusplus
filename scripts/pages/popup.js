@@ -85,13 +85,13 @@ function initializeSortable() {
 			opacity: 0.8,
 			cursorAt: { top: 20, left: 100 },
 			appendTo: 'body',
-			start: function(event, ui) {
+			start: function(_, ui) {
 				ui.helper.css({
 					'transform': 'none',
 					'z-index': '9999'
 				});
 			},
-			stop: function(event, ui) {
+			stop: function() {
 			}
 		});
 		
@@ -101,13 +101,13 @@ function initializeSortable() {
 		return;
 	}
 	
-	$('ul#sab-queue').on('sortstart', function(event, ui) {
+	$('ul#sab-queue').on('sortstart', function(_, ui) {
 		chrome.storage.local.set({ skip_redraw: 1 });
 		var id = $(ui.item).attr('id');
 		oldPos = getSortItemPos(id);
 	});
 	
-	$('ul#sab-queue').on('sortstop', function(event, ui) {
+	$('ul#sab-queue').on('sortstop', function(_, ui) {
 		chrome.storage.local.set({ skip_redraw: 0 });
 		var id = $(ui.item).attr('id');
 		var pos = getSortItemPos(id);
@@ -332,7 +332,7 @@ function initializePopup() {
 function refresh()
 {
 	try {
-		chrome.runtime.sendMessage({ action: 'refresh' }, function(response) {
+		chrome.runtime.sendMessage({ action: 'refresh' }, function() {
 			if (chrome.runtime.lastError) {
 				console.error('Refresh message error:', chrome.runtime.lastError.message);
 			}
@@ -353,7 +353,6 @@ function setMaxSpeedText()
 		if (data) {
 			if (data.queue && data.queue.speedlimit !== undefined) {
 				speedValue = data.queue.speedlimit;
-				updateDiskSpaceInfo(data.queue);
 			} else if (data.speedlimit !== undefined) {
 				speedValue = data.speedlimit;
 			} else if (data.config && data.config.speedlimit !== undefined) {
@@ -371,22 +370,32 @@ function setMaxSpeedText()
 }
 
 function updateDiskSpaceInfo(queueData) {
-	if (queueData) {
-		var availableSpace = queueData.diskspace1_norm ? queueData.diskspace1_norm.replace(' ', '') : (queueData.diskspace1 ? queueData.diskspace1 + 'G' : '-G');
-		var totalSpace = queueData.diskspacetotal1 ? queueData.diskspacetotal1 + 'G' : '-G';
-		
-		var speedLimitMBs = '-MB/s';
-		if (queueData.speedlimit_abs) {
-			var bytesPerSec = parseInt(queueData.speedlimit_abs);
-			var megabytesPerSec = (bytesPerSec / (1024 * 1024)).toFixed(1);
-			speedLimitMBs = megabytesPerSec + 'MB/s';
+	// Check if there's a connection error or if we're loading
+	chrome.storage.local.get(['error'], function(result) {
+		if (result.error && result.error !== '') {
+			// Don't update disk space when there's a connection error
+			$('#disk-available').text('-');
+			$('#disk-total').text('-');
+			$('#speed-limit-abs').text('-MB/s');
+			return;
 		}
 		
+		if (queueData && queueData.diskspace1 && queueData.diskspacetotal1) {
+			var availableSpace = queueData.diskspace1_norm ? queueData.diskspace1_norm.replace(' ', '') : (queueData.diskspace1 ? queueData.diskspace1 + 'G' : '-G');
+			var totalSpace = queueData.diskspacetotal1 ? queueData.diskspacetotal1 + 'G' : '-G';
 			
-		$('#disk-available').text(availableSpace);
-		$('#disk-total').text(totalSpace);
-		$('#speed-limit-abs').text(speedLimitMBs);
-	}
+			var speedLimitMBs = '-MB/s';
+			if (queueData.speedlimit_abs) {
+				var bytesPerSec = parseInt(queueData.speedlimit_abs);
+				var megabytesPerSec = (bytesPerSec / (1024 * 1024)).toFixed(1);
+				speedLimitMBs = megabytesPerSec + 'MB/s';
+			}
+			
+			$('#disk-available').text(availableSpace);
+			$('#disk-total').text(totalSpace);
+			$('#speed-limit-abs').text(speedLimitMBs);
+		}
+	});
 }
 
 function setMaxSpeed( speed )
@@ -454,13 +463,13 @@ function moveQueueItem(nzoid, pos)
 		if (!response.ok) throw new Error('Network response was not ok');
 		return response.json();
 	})
-	.then(data => { refresh(); })
-	.catch(error => {
+	.then(() => { refresh(); })
+	.catch(() => {
 		$('#error').html('Failed to move item, please check your connection to SABnzbd');
 	});
 }
 
-function queueItemAction(action, nzoid, callback)
+function queueItemAction(action, nzoid)
 {
 	var sabApiUrl = constructApiUrl();
 	var data = constructApiPost();
@@ -491,8 +500,8 @@ function queueItemAction(action, nzoid, callback)
 		if (!response.ok) throw new Error('Network response was not ok');
 		return response.json();
 	})
-	.then(data => { refresh(); })
-	.catch(error => {
+	.then(() => { refresh(); })
+	.catch(() => {
 		$('#error').html('Failed to move item, please check your connection to SABnzbd');
 	});
 }
@@ -501,7 +510,7 @@ function queueItemAction(action, nzoid, callback)
 var paused = false;
 var oldPos = -1;
 
-function durationPause(e) {
+function durationPause() {
 	var val = parseInt($(this).val());
 	if(isNaN(val)) {
 		val = parseInt(window.prompt("Duration (minutes)"));
@@ -555,7 +564,7 @@ function togglePause(duration) {
 		if (!response.ok) throw new Error('Network response was not ok');
 		return response.json();
 	})
-	.then(data => {
+	.then(() => {
 		if (wasPaused) {
 			var msg = 'Pause Queue';
 		} else {
@@ -565,7 +574,7 @@ function togglePause(duration) {
 		
 		refresh();
 	})
-	.catch(error => {
+	.catch(() => {
 		$('#togglePause').html('failed - try again');
 	});	
 }
@@ -575,12 +584,8 @@ function SetupTogglePause() {
 		paused = result.paused === true;
 
 	if (paused) {
-		var playImg = chrome.runtime.getURL('images/control_play.png');
-		var img = '<img src="' + playImg +'" />';
 		var msg = 'Resume Queue';
 	} else {
-		var pauseImg = chrome.runtime.getURL('images/control_pause.png');
-		var img = '<img src="' + pauseImg +'" />';
 		var msg = 'Pause Queue';
 	}
 	
@@ -590,7 +595,7 @@ function SetupTogglePause() {
 		e.stopPropagation(); 
 	});
 	
-	$(document).on("wheel", function(e) {
+	$(document).on("wheel", function() {
 		return true;
 	});
 	});
@@ -640,7 +645,46 @@ function getSortItemPos(id) {
 }
 
 function reDrawPopup() {
-	chrome.storage.local.get(['skip_redraw', 'error', 'paused', 'status', 'timeleft', 'speed', 'sizeleft', 'paused_jobs', 'pause_int', 'queue', 'queue_info', 'speedlog'], function(result) {
+	chrome.storage.local.get(['skip_redraw', 'error', 'paused', 'status', 'timeleft', 'speed', 'sizeleft', 'paused_jobs', 'pause_int', 'queue', 'queue_info', 'speedlog', 'last_successful_data', 'last_successful_profile'], function(result) {
+		var currentProfile = profiles ? profiles.getActiveProfile() : null;
+		var currentProfileName = currentProfile ? currentProfile.name : 'Default';
+		var cachedProfileName = result.last_successful_profile || 'Default';
+		
+		// Only use current data if it's from the same profile
+		var hasCurrentData = (result.queue_info || result.status || result.speed) && (currentProfileName === cachedProfileName);
+		
+		if (!hasCurrentData && result.last_successful_data) {
+			if (currentProfileName === cachedProfileName) {
+				var cachedData = result.last_successful_data;
+				result = { ...result, ...cachedData };
+			}
+		}
+		
+		// Clear data if from wrong profile
+		if (!hasCurrentData && currentProfileName !== cachedProfileName) {
+			// Immediately clear disk space UI to prevent stale data
+			$('#disk-available').text('-');
+			$('#disk-total').text('-');
+			$('#speed-limit-abs').text('-MB/s');
+			
+			result = { 
+				skip_redraw: result.skip_redraw,
+				error: result.error, // Preserve error messages
+				queue_info: null,
+				status: null,
+				speed: null,
+				sizeleft: null,
+				queue: null,
+				paused: null,
+				timeleft: null
+			};
+		}
+		
+		drawPopupUI(result);
+	});
+}
+
+function drawPopupUI(result) {
 		if(result.skip_redraw == '1') return;
 		
 		var shouldSkipQueueRedraw = false;
@@ -659,7 +703,7 @@ function reDrawPopup() {
 
 		var fields = ['status', 'paused', 'timeleft', 'speed', 'sizeleft', 'paused_jobs'];
 		
-		$.each(fields, function(i, field) {
+		$.each(fields, function(_, field) {
 			var value = result[field];
 			$('#sab-' + field).html(value);
 		});
@@ -668,19 +712,7 @@ function reDrawPopup() {
 		$('#sab-status').removeClass().addClass(status);
 		
 		
-		var hasQueueItems = false;
-		var hasQueueData = false;
-		if (result.queue) {
-			try {
-				var queueItems = JSON.parse(result.queue);
-				hasQueueItems = queueItems && queueItems.length > 0;
-				hasQueueData = true;
-			} catch(e) {
-				hasQueueData = false;
-			}
-		}
-		
-		updateQueueToggleButton(status, paused, hasQueueItems, hasQueueData);
+		updateQueueToggleButton(paused);
 
 		if (!shouldSkipQueueRedraw) {
 			$('ul#sab-queue').html('');
@@ -704,7 +736,7 @@ function reDrawPopup() {
 		var jobs = [];
 		if(typeof queue != "undefined" && queue)
 			jobs = JSON.parse(queue);
-	$.each(jobs, function(i, slot) {
+	$.each(jobs, function(_, slot) {
 	    var infoItems = [];
 	    
 	    if (slot.cat && slot.cat !== '*') {
@@ -776,15 +808,7 @@ function reDrawPopup() {
 			$(this).find('.fullOpacity').addClass('lowOpacity').removeClass('fullOpacity');
 		}
 	);
-	/*
-	$(".filename").hover(
-		function () {
-			$(this).closest('li').addClass('highlight')
-		}, 
-		function () {
-			$(this).closest('li').removeClass('highlight')
-		}
-	);   */ 
+ 
 	$(".item").hover(
 		function () {
 			$(this).addClass('highlight');
@@ -833,8 +857,6 @@ function reDrawPopup() {
 		    $('#graph-container').hide();
 		}
 		
-		setMaxSpeedText();
-		
 		var queueInfo = result.queue_info;
 		if (queueInfo) {
 			try {
@@ -850,7 +872,6 @@ function reDrawPopup() {
 		updateHistory();
 		
 		updateScheduleStatus();
-	});
 }
 
 
@@ -885,6 +906,22 @@ function safeUpdateValue(selector, value) {
     return false; 
 }
 
+function clearProfileData() {
+	$('#speed-input').val('');
+	$('#disk-space-available').text('-');
+	$('#disk-space-total').text('-');
+	
+	$('#stats-today').text('-');
+	$('#stats-month').text('-');
+	$('#stats-total').text('-');
+	
+	$('#history-list').empty();
+	
+	$('#sab-errors').html('');
+	
+	chrome.storage.local.remove(['last_successful_data', 'last_successful_profile', 'last_successful_timestamp', 'queue_info', 'status', 'speed', 'sizeleft', 'queue', 'error', 'paused', 'timeleft', 'speedlog', 'diskspacetotal1', 'diskspace1', 'pause_int']);
+}
+
 function OnProfileChanged( event )
 {
 	var profileName = event.target.value;
@@ -892,12 +929,13 @@ function OnProfileChanged( event )
 	
 	$(event.target).blur();
 	
+	clearProfileData();
+	
 	chrome.runtime.sendMessage({ 
 		action: 'profileChanged', 
 		profileName: profileName 
 	});
 	
-	setMaxSpeedText();
 	refresh();
 }
 
@@ -921,7 +959,6 @@ function OnCategoryChanged(event)
     
     $(event.target).blur();
 
-    setMaxSpeedText();
     refresh();
 }
 
@@ -943,41 +980,36 @@ function populateAndSetCategoryList()
 }
 
 function updateStatistics() {
-	var periods = ['today', 'month', 'all_time'];
-	
-	periods.forEach(function(period) {
-		chrome.runtime.sendMessage({ 
-			action: 'getStatistics', 
-			period: period 
-		}, function(response) {
-			if (response && response.success) {
-				var stats = response.statistics;
-				
-				var totalSize = '-';
-				if (stats.total_size !== undefined) {
-					totalSize = fileSizes(stats.total_size);
-				} else if (stats.total_size_bytes !== undefined) {
-					totalSize = fileSizes(stats.total_size_bytes);
-				}
-				
-				var elementId = '';
-				switch(period) {
-					case 'today':
-						elementId = '#stats-today';
-						break;
-					case 'month':
-						elementId = '#stats-month';
-						break;
-					case 'all_time':
-						elementId = '#stats-total';
-						break;
-				}
-				
-				if (elementId) {
-					$(elementId).text(totalSize);
-				}
+	// Make only ONE API call to get all statistics
+	chrome.runtime.sendMessage({ 
+		action: 'getStatistics', 
+		period: 'all' // Single call gets all data
+	}, function(response) {
+		if (response && response.success) {
+			var stats = response.statistics;
+			
+			var todaySize = '-';
+			if (stats.day !== undefined) {
+				todaySize = fileSizes(stats.day);
 			}
-		});
+			$('#stats-today').text(todaySize);
+			
+			var monthSize = '-';
+			if (stats.month !== undefined) {
+				monthSize = fileSizes(stats.month);
+			}
+			$('#stats-month').text(monthSize);
+			
+			var totalSize = '-';
+			if (stats.total !== undefined) {
+				totalSize = fileSizes(stats.total);
+			}
+			$('#stats-total').text(totalSize);
+		} else {
+			$('#stats-today').text('-');
+			$('#stats-month').text('-');
+			$('#stats-total').text('-');
+		}
 	});
 }
 
@@ -1138,12 +1170,9 @@ function initSpeedChart() {
 	
 	var computedStyle = getComputedStyle(document.documentElement);
 	var accentGreen = computedStyle.getPropertyValue('--accent-green').trim() || '#00b894';
-	var accentGreenLight = computedStyle.getPropertyValue('--accent-green-light').trim() || '#00cec9';
-	var textSecondary = computedStyle.getPropertyValue('--text-secondary').trim() || '#636e72';
-	var borderColor = computedStyle.getPropertyValue('--border-color').trim() || '#e1e8ed';
 	
 	
-	var tension, borderWidth, pointRadius;
+	var tension, borderWidth;
 	switch(chartType) {
 		case 'line':
 			tension = 0.1;
@@ -1338,7 +1367,7 @@ function hidePauseDropdown() {
 	$('#queue_toggle_container').removeClass('show-dropdown');
 }
 
-function updateQueueToggleButton(status, isPaused, hasQueueItems, hasQueueData) {
+function updateQueueToggleButton(isPaused) {
 	
 	var $btn = $('#queue_toggle_btn');
 	var $img = $btn.find('img');
@@ -1499,11 +1528,12 @@ function updateScheduleStatus() {
 	});
 }
 
-chrome.runtime.onMessage.addListener(function(request, sender, sendResponse) {
+chrome.runtime.onMessage.addListener(function(request) {
 	if (request.action === 'refresh_popup') {
 		reDrawPopup();
 	} else if (request.action === 'settings_changed') {
-		location.reload();
+		// Trigger immediate refresh instead of full reload
+		reDrawPopup();
 	}
 });
 

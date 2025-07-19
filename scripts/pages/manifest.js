@@ -18,6 +18,31 @@ window.manifest = {
 			'config_refresh_rate',
 			'config_notification_timeout'
 		],
+		// Provider alignment pairs for 2-column layout
+		[
+			'provider_binsearch',
+			'provider_bintube'
+		],
+		[
+			'provider_dognzb',
+			'provider_fanzub'
+		],
+		[
+			'provider_animezb',
+			'provider_animenzb'
+		],
+		[
+			'provider_nzbclub',
+			'provider_nzbindex'
+		],
+		[
+			'provider_yubse',
+			'provider_omgwtfnzbs'
+		],
+		[
+			'provider_nzbrss',
+			'provider_usenet4ever'
+		],
 	],
 	'settings': [
 		// Connections Tab
@@ -192,14 +217,6 @@ window.manifest = {
 			'type': 'checkbox',
 			'sync': true,
 			'label': 'nzb-rss.com'
-		},					
-		{
-			'tab': 'Providers',
-			'group': '1-Click NZB downloading',
-			'name': 'provider_newznab',
-			'type': 'text',
-			'sync': true,
-			'label': 'Newznab Providers (coma-separated list of hostnames):'
 		},
 		{
 			'tab': 'Providers',
@@ -208,6 +225,14 @@ window.manifest = {
 			'type': 'checkbox',
 			'sync': true,
 			'label': 'usenet4ever.info'
+		},
+		{
+			'tab': 'Providers',
+			'group': '1-Click NZB downloading',
+			'name': 'provider_newznab',
+			'type': 'text',
+			'sync': true,
+			'label': 'Newznab Providers (comma-separated list of hostnames):'
 		},
 		
 		// Providers Tab, display section

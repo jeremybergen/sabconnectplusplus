@@ -194,7 +194,15 @@ function OnResetConfigClicked( settings )
 
 function OnRefreshRateChanged()
 {
-	chrome.runtime.sendMessage({ action: 'restartTimer' });
+	var refreshRate = settings.manifest.config_refresh_rate.get();
+	console.log('SABconnect++ DEBUG: OnRefreshRateChanged() called - new refresh rate:', refreshRate, 'seconds');
+	chrome.runtime.sendMessage({ action: 'restartTimer' }, function(response) {
+		if (chrome.runtime.lastError) {
+			console.error('SABconnect++ ERROR: Failed to send restartTimer message:', chrome.runtime.lastError);
+		} else {
+			console.log('SABconnect++ DEBUG: restartTimer message sent successfully');
+		}
+	});
 	chrome.runtime.sendMessage({ action: 'settings_changed' });
 }
 
@@ -472,6 +480,101 @@ function InitializeSettings( settings )
 	SetupConnectionProfiles( settings );
 	AddProfileButtons( settings );
 	RegisterContentScriptNotifyHandlers( settings );
+	
+	// Apply modern compact styling to providers section
+	ApplyProvidersCompactStyling( settings );
+}
+
+function ApplyProvidersCompactStyling( settings )
+{
+	// Simple styling application - grid support will be handled by fancy-settings framework
+	console.log('SABconnect++: Applying compact provider styling via fancy-settings grid support');
+}
+
+function CreateTwoColumnProviderLayout(settingsGroup) {
+	console.log('SABconnect++: CreateTwoColumnProviderLayout called');
+	
+	// Find all checkbox provider settings (exclude description and text inputs)
+	var allSettings = settingsGroup.querySelectorAll('.setting');
+	var checkboxProviders = [];
+	var otherSettings = [];
+	
+	console.log('SABconnect++: Found', allSettings.length, 'total settings');
+	
+	allSettings.forEach(function(setting) {
+		var input = setting.querySelector('input');
+		if (input) {
+			console.log('SABconnect++: Found input with name:', input.name, 'type:', input.type);
+			if (input.type === 'checkbox' && input.name && input.name.includes('provider_')) {
+				checkboxProviders.push(setting);
+				console.log('SABconnect++: Added checkbox provider:', input.name);
+			} else {
+				otherSettings.push(setting);
+			}
+		} else {
+			// Check for textarea or other elements
+			var textarea = setting.querySelector('textarea');
+			if (textarea) {
+				console.log('SABconnect++: Found textarea with name:', textarea.name);
+				otherSettings.push(setting);
+			} else {
+				otherSettings.push(setting);
+			}
+		}
+	});
+	
+	console.log('SABconnect++: Found', checkboxProviders.length, 'checkbox providers');
+	
+	// Only proceed if we have checkbox providers
+	if (checkboxProviders.length > 0) {
+		// Check if grid already exists
+		var existingGrid = settingsGroup.querySelector('.providers-checkbox-grid');
+		if (existingGrid) {
+			console.log('SABconnect++: Grid already exists, skipping creation');
+			return;
+		}
+		
+		// Create a grid container for checkbox providers
+		var gridContainer = document.createElement('div');
+		gridContainer.className = 'providers-checkbox-grid';
+		
+		// Move checkbox providers to the grid
+		checkboxProviders.forEach(function(provider) {
+			provider.parentNode.removeChild(provider);
+			gridContainer.appendChild(provider);
+		});
+		
+		// Find the best position to insert the grid (after description, before newznab)
+		var insertPosition = null;
+		var descriptionSetting = null;
+		
+		// Look for the description setting first
+		for (var i = 0; i < otherSettings.length; i++) {
+			var setting = otherSettings[i];
+			var input = setting.querySelector('input, textarea');
+			if (input && input.name === 'provider_description') {
+				descriptionSetting = setting;
+			} else if (input && input.name === 'provider_newznab') {
+				insertPosition = setting;
+				break;
+			}
+		}
+		
+		// Insert the grid after description but before newznab
+		if (insertPosition) {
+			settingsGroup.insertBefore(gridContainer, insertPosition);
+		} else if (descriptionSetting) {
+			// Insert after description if no newznab found
+			descriptionSetting.parentNode.insertBefore(gridContainer, descriptionSetting.nextSibling);
+		} else {
+			// Insert at the beginning if neither found
+			settingsGroup.insertBefore(gridContainer, settingsGroup.firstChild);
+		}
+		
+		console.log('SABconnect++: Created 2-column layout for', checkboxProviders.length, 'provider checkboxes');
+	} else {
+		console.log('SABconnect++: No checkbox providers found, skipping grid creation');
+	}
 }
 
 window.onbeforeunload = function() {

@@ -23,5 +23,16 @@ function handleAllDownloadLinks() {
 }
 
 Initialize( 'nzbclub', null, function() {
+	console.log('SABconnect++ NZBClub: Script initialized');
 	handleAllDownloadLinks();
+	
+	// Fallback if no icons were added
+	if ($('a.addSABnzbd').length === 0) {
+		console.log('SABconnect++ NZBClub: No icons added, trying fallback...');
+		addIconsWithFallback({
+			linkSelector: 'a[href*="/nzb_get.aspx"], a[href*="/nzb/"]',
+			iconClass: 'addSABnzbd',
+			clickHandler: addToSABnzbdFromNZBCLUB
+		});
+	}
 });
